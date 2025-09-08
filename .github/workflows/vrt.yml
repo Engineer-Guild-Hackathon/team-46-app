@@ -7,21 +7,35 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 16.x
+          node-version: 22.12.x
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build app
         run: npm run build
 
-      - name: Start server (in background)
-        run: npm run start &
+      - name: Start preview server (in background)
+        run: |
+          # Start Vite preview on 0.0.0.0:3000 so it is reachable from the Lost Pixel Docker container via 172.17.0.1
+          npm run preview -- --host 0.0.0.0 --port 3000 &
+          echo $! > preview.pid
+
+      - name: Wait for preview to be ready
+        run: |
+          for i in {1..60}; do
+            if curl -sSf http://172.17.0.1:3000 >/dev/null; then
+              echo "Preview is up"; exit 0;
+            fi
+            echo "Waiting for preview... ($i)"; sleep 2;
+          done
+          echo "Preview did not start in time"; exit 1
 
       - name: Lost Pixel
         uses: lost-pixel/lost-pixel@v3.16.0
