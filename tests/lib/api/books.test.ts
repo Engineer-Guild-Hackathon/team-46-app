@@ -100,7 +100,8 @@ describe('createPaginatedBooksStore', () => {
 
   it('loads initial page, supports loadMore & refresh, and sets hasMore correctly', async () => {
     const fetchMock = vi.fn(async (input: unknown) => {
-      const url = new URL(String(input))
+      const urlStr = String(input)
+      const url = urlStr.startsWith('http') ? new URL(urlStr) : new URL(urlStr, 'http://localhost')
       const start = Number(url.searchParams.get('start') || '0')
       // const size = Number(url.searchParams.get('size') || '20') // not needed in test assertions
       let raw: Record<string, { title: string; author: string }> = {}
@@ -138,7 +139,10 @@ describe('createPaginatedBooksStore', () => {
     const states: StateShape[] = []
     const unsub = store.subscribe((v) => states.push(structuredClone(v) as StateShape))
 
-    await flush() // allow initial load
+    // Wait until initial items populated (poll a few times)
+    for (let i = 0; i < 5 && (states.at(-1)?.items.length ?? 0) === 0; i++) {
+      await flush()
+    }
     const s1 = states.at(-1)!
     expect(s1.items).toHaveLength(2)
     expect(s1.hasMore).toBe(true)
@@ -166,9 +170,11 @@ describe('createPaginatedBooksStore', () => {
 
     unsub()
     // Calls: start=0, start=2, start=4, refresh start=0 => 4 calls total
-    const callStarts = fetchMock.mock.calls.map((c) =>
-      new URL(c[0] as string).searchParams.get('start')
-    )
+    const callStarts = fetchMock.mock.calls.map((c) => {
+      const u = c[0] as string
+      const parsed = u.startsWith('http') ? new URL(u) : new URL(u, 'http://localhost')
+      return parsed.searchParams.get('start')
+    })
     expect(callStarts).toEqual(['0', '2', '4', '0'])
   })
 
