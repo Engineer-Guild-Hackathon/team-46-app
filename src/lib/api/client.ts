@@ -14,7 +14,7 @@ export interface RequestOptions {
 // For now we hardcode because only one function endpoint is defined.
 const BOOKS_ENDPOINT = 'https://us-central1-flexread-egh.cloudfunctions.net/getBooks'
 // Relative path for book text (served by local dev proxy / backend). Adjust with env var if needed.
-const TEXT_ENDPOINT = '/api/text'
+const TEXT_ENDPOINT = 'https://us-central1-flexread-egh.cloudfunctions.net/getText'
 
 /** Build a query string from an object, skipping undefined / null values */
 export function buildQuery(params: Record<string, unknown> = {}): string {
