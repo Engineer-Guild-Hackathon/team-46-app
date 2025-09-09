@@ -4,7 +4,7 @@
   import * as Select from "$lib/components/ui/select";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
-  import { createPaginatedBooksStore, fetchBooks } from '$lib/api/books'
+  import { createPaginatedBooksStore } from '$lib/api/books'
   import { onDestroy } from 'svelte'
 
   // UI state

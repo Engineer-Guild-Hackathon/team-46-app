@@ -3,9 +3,17 @@
 // We keep this file intentionally small and framework agnostic so it can be
 // reused inside Svelte load functions, components, or custom stores.
 
+// Ensure DOM lib types; if ambient types missing (node test), fall back to minimal declarations.
+// (ESLint no-undef flagged RequestInit in some contexts.)
+// Infer the init type from global fetch without using explicit 'any'. Fallback to generic object.
+type _FetchFn = typeof fetch extends (input: infer _I, init?: infer R) => Promise<unknown>
+  ? { init: R }
+  : never
+type _RequestInit = _FetchFn extends { init: infer R } ? R : Record<string, unknown>
+
 export interface RequestOptions {
   /** Additional fetch init overrides */
-  init?: RequestInit
+  init?: _RequestInit
   /** Abort controller signal to cancel an in-flight request */
   signal?: AbortSignal
 }
