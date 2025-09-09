@@ -1,3 +1,6 @@
+// For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
+import storybook from "eslint-plugin-storybook";
+
 // ESLint flat config for ESLint v9+ (Svelte + TypeScript)
 import js from '@eslint/js'
 import globals from 'globals'
@@ -7,41 +10,35 @@ import svelteParser from 'svelte-eslint-parser'
 import sveltePlugin from 'eslint-plugin-svelte'
 import eslintConfigPrettier from 'eslint-config-prettier'
 
-export default [
-  {
-    ignores: ['node_modules/**', 'dist/**', 'build/**', '.svelte-kit/**', 'storybook-static/**']
+export default [{
+  ignores: ['node_modules/**', 'dist/**', 'build/**', '.svelte-kit/**', 'storybook-static/**']
+}, js.configs.recommended, {
+  files: ['**/*.ts']
+  ,languageOptions: {
+    parser: tsParser,
+    parserOptions: {
+      sourceType: 'module',
+      ecmaVersion: 'latest'
+    },
+    globals: globals.browser
   },
-  js.configs.recommended,
-  {
-    files: ['**/*.ts']
-    ,languageOptions: {
+  plugins: { '@typescript-eslint': tsPlugin },
+  rules: {
+    ...tsPlugin.configs.recommended.rules
+  }
+}, {
+  files: ['**/*.svelte'],
+  languageOptions: {
+    parser: svelteParser,
+    parserOptions: {
       parser: tsParser,
-      parserOptions: {
-        sourceType: 'module',
-        ecmaVersion: 'latest'
-      },
-      globals: globals.browser
+      extraFileExtensions: ['.svelte']
     },
-    plugins: { '@typescript-eslint': tsPlugin },
-    rules: {
-      ...tsPlugin.configs.recommended.rules
-    }
+    globals: globals.browser
   },
-  {
-    files: ['**/*.svelte'],
-    languageOptions: {
-      parser: svelteParser,
-      parserOptions: {
-        parser: tsParser,
-        extraFileExtensions: ['.svelte']
-      },
-      globals: globals.browser
-    },
-    plugins: { svelte: sveltePlugin },
-    rules: {
-      ...sveltePlugin.configs['flat/recommended'].rules
-    }
-  },
-  // Disable rules that conflict with Prettier formatting
-  eslintConfigPrettier
-]
+  plugins: { svelte: sveltePlugin },
+  rules: {
+    ...sveltePlugin.configs['flat/recommended'].rules
+  }
+}, // Disable rules that conflict with Prettier formatting
+eslintConfigPrettier, ...storybook.configs["flat/recommended"]];
