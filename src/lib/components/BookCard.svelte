@@ -23,14 +23,6 @@
       {#if book.author}
         <p class="author">{book.author}</p>
       {/if}
-      <div class="meta-row">
-        {#if book.year}
-          <span class="meta-small">{book.year}</span>
-        {/if}
-        {#if book.popularity}
-          <span class="meta-small">⭐ {book.popularity}</span>
-        {/if}
-      </div>
     </div>
   </div>
 </button>
@@ -72,6 +64,4 @@
     max-width: 90%; 
     display: inline-block; 
 }
-  .meta-row { display:flex; gap:6px; }
-  .meta-small { font-size:0.82rem; opacity:0.85; color:var(--muted-foreground) }
 </style>

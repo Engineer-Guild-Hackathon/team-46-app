@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{svelte,ts,js}'],
+  content: ['./index.html', './src/**/*.{svelte,ts,js}', './.storybook/**/*.{ts,js,svelte}'],
   theme: { extend: {} },
   plugins: [
     // tailwindcss-animate is a standard plugin; in ESM config, import sync at top is not available,

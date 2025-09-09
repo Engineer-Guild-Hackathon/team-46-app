@@ -84,7 +84,7 @@
     <p class="muted">Level-based text generation PoC</p>
   </section>
 
-    <section class="controls" role="search">
+    <form class="controls" role="search" on:submit|preventDefault={submitSearch}>
       <Input
         class="w-[220px]"
         type="search"
@@ -92,11 +92,10 @@
         aria-label="Search books"
         bind:value={search}
         disabled={loading}
-        on:keydown={(e) => { if ((e as KeyboardEvent).key === 'Enter') submitSearch(e) }}
       />
-    <Button size="sm" on:click={submitSearch} disabled={loading} aria-label="Run search">Search</Button>
-  <Select.Root type="single" bind:value={sort}>
-        <Select.Trigger >
+      <Button size="sm" disabled={loading} aria-label="Run search" type="submit">Search</Button>
+      <Select.Root type="single" bind:value={sort}>
+        <Select.Trigger>
           {sort ? (sort === 'year' ? 'Year Released' : sort.charAt(0).toUpperCase() + sort.slice(1)) : 'Sort by...'}
         </Select.Trigger>
         <Select.Content>
@@ -104,8 +103,8 @@
           <Select.Item value="popularity">Popularity</Select.Item>
           <Select.Item value="year">Year Released</Select.Item>
         </Select.Content>
-      </Select.Root> 
-    </section>
+      </Select.Root>
+    </form>
 
   {#if error}
     <p class="warning">{error}</p>
