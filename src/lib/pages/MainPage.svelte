@@ -1,69 +1,103 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
   import BookCard from '../components/BookCard.svelte'
   import type { Book } from '../types'
   import * as Select from "$lib/components/ui/select";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
+  import { createPaginatedBooksStore, fetchBooks } from '$lib/api/books'
+  import { onDestroy } from 'svelte'
 
-    let books: Book[] = []
-    let loading = true
-    let error: string | null = null
-
-  // Controls state (UI only)
+  // UI state
   let search = ''
-  let sort = 'recommended' // default selection
+  let sort: 'recommended' | 'popularity' | 'year' = 'recommended'
 
-  const skeletonCount = 8
+  // Data state derived from API store
+  const pageSize = 12
+  let store = createPaginatedBooksStore({ size: pageSize })
+  let books: Book[] = []
+  let hasMore = true
+  let loading = true
+  let error: string | null = null
+  const skeletonCount = pageSize
   const skeletonIndices = Array.from({ length: skeletonCount }, (_, i) => i)
+  let unsubscribe = store.subscribe((p) => {
+    books = p.items.map(b => ({ id: b.id, title: b.title, author: b.author, coverUrl: b.thumbnail }))
+    hasMore = p.hasMore
+    loading = false
+  })
+  onDestroy(() => unsubscribe())
 
-    const mockBooks: Book[] = [
-      { id: '1', title: 'The Little Prince', author: 'Antoine de Saint‑Exupéry' },
-      { id: '2', title: 'Alice in Wonderland', author: 'Lewis Carroll' },
-      { id: '3', title: 'Treasure Island', author: 'R. L. Stevenson' },
-      { id: '4', title: 'Gulliver\'s Travels', author: 'Jonathan Swift' },
-    ]
+  // Debounce search input
+  let searchTimer: number | undefined
+  $: if (search !== undefined) {
+    // When search changes, debounce reload
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      refreshData()
+    }, 350) as unknown as number
+  }
 
-    async function loadBooks() {
-      loading = true
-      error = null
-      try {
-        const res = await fetch('/api/books')
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-        const data = (await res.json()) as Book[]
-        books = data
-      } catch (e) {
-        console.warn('Falling back to mock books:', e)
-        books = mockBooks
-        error = 'Using sample data (backend not reachable)'
-      } finally {
+  // React to sort changes (immediate)
+  let prevSort = sort
+  $: if (sort !== prevSort) {
+    prevSort = sort
+    refreshData()
+  }
+
+  async function refreshData() {
+    loading = true
+    error = null
+    try {
+  store = createPaginatedBooksStore({ size: pageSize, search: search.trim(), sort: backendSort(sort) })
+  // re-subscribe
+  unsubscribe()
+  unsubscribe = store.subscribe((p) => {
+        books = p.items.map(b => ({ id: b.id, title: b.title, author: b.author, coverUrl: b.thumbnail }))
+        hasMore = p.hasMore
         loading = false
+      })
+    } catch (e: any) {
+      error = e.message || 'Failed to load books'
+      loading = false
+    }
+  }
+
+  function backendSort(value: string): string | undefined {
+    switch (value) {
+      case 'popularity': return 'pop'
+      case 'year': return 'year'
+      case 'recommended':
+      default: return undefined
+    }
+  }
+
+  function submitSearch(event?: Event) {
+    event?.preventDefault?.()
+    refreshData()
+  }
+
+  function openBook(book: Book) {
+    location.hash = `#/book/${book.id}`
+  }
+
+  async function loadMore() {
+    if (loading || !hasMore) return
+    loading = true
+    await store.loadMore()
+  }
+
+  // IntersectionObserver sentinel
+  let sentinel: HTMLDivElement | null = null
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        loadMore()
       }
-    }
+    })
+  }, { rootMargin: '200px 0px 0px 0px', threshold: 0 })
 
-    function openBook(book: Book) {
-      location.hash = `#/book/${book.id}`
-    }
-
-    function triggerMockLoading() {
-      loading = true
-      setTimeout(() => { loading = false }, 600)
-    }
-
-    function submitSearch(event?: Event) {
-      event?.preventDefault?.()
-      // here we'd call the API with `search`
-      triggerMockLoading()
-    }
-
-    // react to sort changes without relying on typed events on Select.Root
-    let prevSort = sort
-    $: if (sort !== prevSort) {
-      prevSort = sort
-      triggerMockLoading()
-    }
-
-    onMount(loadBooks)
+  $: if (sentinel) observer.observe(sentinel)
+  onDestroy(() => observer.disconnect())
 </script>
 
 <header class="topbar">
@@ -111,8 +145,8 @@
     <p class="warning">{error}</p>
   {/if}
   <section class="grid" aria-live="polite">
-    {#if loading}
-  {#each skeletonIndices as i (i)}
+    {#if books.length === 0 && loading}
+      {#each skeletonIndices as i (i)}
         <div class="skeleton-card" aria-hidden="true">
           <div class="skeleton-cover shimmer"></div>
           <div class="skeleton-body">
@@ -124,15 +158,28 @@
           </div>
         </div>
       {/each}
+    {:else if books.length === 0}
+      <div class="empty-state">No books found</div>
     {:else}
-      {#if books.length === 0}
-        <div class="empty-state">No books found</div>
-      {/if}
       {#each books as b (b.id)}
         <BookCard book={b} onOpen={openBook} />
       {/each}
+      {#if loading}
+        <!-- Loading indicator for pagination -->
+        <div class="skeleton-card" aria-hidden="true">
+          <div class="skeleton-cover shimmer"></div>
+          <div class="skeleton-body">
+            <div class="skeleton-line w-85 shimmer"></div>
+            <div class="skeleton-line w-60 shimmer"></div>
+          </div>
+          <div class="skeleton-footer">
+            <div class="skeleton-badge shimmer"></div>
+          </div>
+        </div>
+      {/if}
     {/if}
   </section>
+  <div bind:this={sentinel} class="infinite-sentinel" aria-hidden="true"></div>
 </main>
 
 <style>
@@ -228,6 +275,7 @@
   }
 
   .empty-state { grid-column: 1 / -1; opacity: 0.6; padding: 0.5rem 0 }
+  .infinite-sentinel { height: 1px; }
   @media (max-width: 520px) {
     .container { padding: 1rem 0.5rem; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
