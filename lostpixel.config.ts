@@ -1,3 +1,4 @@
+/* eslint-env node */
 import { CustomProjectConfig } from 'lost-pixel'
 
 export const config: CustomProjectConfig = {

@@ -1,4 +1,3 @@
-/// <reference types="vitest" />
 import { render, fireEvent } from '@testing-library/svelte'
 import { describe, it, expect, vi } from 'vitest'
 import BookCard from '$lib/components/BookCard.svelte'

@@ -15,6 +15,7 @@
   let sort = 'recommended' // default selection
 
   const skeletonCount = 8
+  const skeletonIndices = Array.from({ length: skeletonCount }, (_, i) => i)
 
     const mockBooks: Book[] = [
       { id: '1', title: 'The Little Prince', author: 'Antoine de Saint‑Exupéry' },
@@ -111,7 +112,7 @@
   {/if}
   <section class="grid" aria-live="polite">
     {#if loading}
-      {#each Array(skeletonCount) as _, i}
+  {#each skeletonIndices as i (i)}
         <div class="skeleton-card" aria-hidden="true">
           <div class="skeleton-cover shimmer"></div>
           <div class="skeleton-body">
