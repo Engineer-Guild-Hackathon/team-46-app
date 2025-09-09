@@ -17,7 +17,7 @@
   const skeletonCount = 8
 
     const mockBooks: Book[] = [
-      { id: '1', title: 'The Little Prince', author: 'Antoine de Saint‑Exupéry', recommended: true },
+      { id: '1', title: 'The Little Prince', author: 'Antoine de Saint‑Exupéry' },
       { id: '2', title: 'Alice in Wonderland', author: 'Lewis Carroll' },
       { id: '3', title: 'Treasure Island', author: 'R. L. Stevenson' },
       { id: '4', title: 'Gulliver\'s Travels', author: 'Jonathan Swift' },
