@@ -23,7 +23,10 @@
   let unsubscribe = store.subscribe((p) => {
     books = p.items.map(b => ({ id: b.id, title: b.title, author: b.author, coverUrl: b.thumbnail }))
     hasMore = p.hasMore
-    loading = false
+    // Only stop loading when we have results or definitively no more pages (no results)
+    if (loading && (books.length > 0 || !hasMore)) {
+      loading = false
+    }
   })
   onDestroy(() => unsubscribe())
 
@@ -54,7 +57,10 @@
   unsubscribe = store.subscribe((p) => {
         books = p.items.map(b => ({ id: b.id, title: b.title, author: b.author, coverUrl: b.thumbnail }))
         hasMore = p.hasMore
-        loading = false
+        // Maintain loading true until first results arrive or we know there are none
+        if (loading && (books.length > 0 || !hasMore)) {
+          loading = false
+        }
       })
     } catch (e: any) {
       error = e.message || 'Failed to load books'
