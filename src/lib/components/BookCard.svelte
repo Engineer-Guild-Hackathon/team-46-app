@@ -41,7 +41,8 @@
     box-shadow:0 1px 6px rgba(16,24,40,0.04);
     text-align:left;
     cursor:pointer;
-  padding:10px;
+    padding:10px;
+    height: fit-content;
   }
   .card:hover { transform:translateY(-6px); box-shadow:0 12px 30px rgba(16,24,40,0.12) }
   .card:focus { outline:2px solid rgba(59,130,246,0.35); outline-offset:2px }
