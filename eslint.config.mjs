@@ -20,7 +20,7 @@ export default [{
       sourceType: 'module',
       ecmaVersion: 'latest'
     },
-    globals: globals.browser
+  globals: { ...globals.browser, ...globals.node }
   },
   plugins: { '@typescript-eslint': tsPlugin },
   rules: {
@@ -34,11 +34,18 @@ export default [{
       parser: tsParser,
       extraFileExtensions: ['.svelte']
     },
-    globals: globals.browser
+  globals: { ...globals.browser, ...globals.node }
   },
-  plugins: { svelte: sveltePlugin },
+  plugins: { svelte: sveltePlugin, '@typescript-eslint': tsPlugin },
   rules: {
-    ...sveltePlugin.configs['flat/recommended'].rules
+  ...sveltePlugin.configs['flat/recommended'].rules,
+  // Use TS version for better accuracy and allow leading underscore ignores
+  'no-unused-vars': 'off',
+  '@typescript-eslint/no-unused-vars': ['error', {
+    argsIgnorePattern: '^_',
+    varsIgnorePattern: '^_',
+    caughtErrorsIgnorePattern: '^_'
+  }]
   }
 }, // Disable rules that conflict with Prettier formatting
 eslintConfigPrettier, ...storybook.configs["flat/recommended"]];

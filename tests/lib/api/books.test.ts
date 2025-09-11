@@ -37,7 +37,8 @@ describe('fetchBooks', () => {
     expect(page.hasMore).toBe(false)
 
     // Ensure query params were included
-    const calledUrl = (fetch as any).mock.calls[0][0] as string
+    const calledUrl = (fetch as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0][0] as string
     expect(calledUrl).toMatch(/search=alice/)
     expect(calledUrl).toMatch(/size=10/)
   })
@@ -98,10 +99,11 @@ describe('createPaginatedBooksStore', () => {
   })
 
   it('loads initial page, supports loadMore & refresh, and sets hasMore correctly', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo) => {
-      const url = new URL(input as string)
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const urlStr = String(input)
+      const url = urlStr.startsWith('http') ? new URL(urlStr) : new URL(urlStr, 'http://localhost')
       const start = Number(url.searchParams.get('start') || '0')
-      const size = Number(url.searchParams.get('size') || '20')
+      // const size = Number(url.searchParams.get('size') || '20') // not needed in test assertions
       let raw: Record<string, { title: string; author: string }> = {}
       if (start === 0) {
         raw = {
@@ -130,22 +132,32 @@ describe('createPaginatedBooksStore', () => {
     vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
 
     const store = createPaginatedBooksStore({ size: 2 })
-    const states: any[] = []
-    const unsub = store.subscribe((v) => states.push(structuredClone(v)))
+    interface StateShape {
+      items: Array<{ id: string }>
+      hasMore: boolean
+    }
+    const states: StateShape[] = []
+    const unsub = store.subscribe((v) => states.push(structuredClone(v) as StateShape))
 
-    await flush() // allow initial load
-    expect(states.at(-1).items).toHaveLength(2)
-    expect(states.at(-1).hasMore).toBe(true)
+    // Wait until initial items populated (poll a few times)
+    for (let i = 0; i < 5 && (states.at(-1)?.items.length ?? 0) === 0; i++) {
+      await flush()
+    }
+    const s1 = states.at(-1)!
+    expect(s1.items).toHaveLength(2)
+    expect(s1.hasMore).toBe(true)
 
     await store.loadMore()
     await flush()
-    expect(states.at(-1).items).toHaveLength(4)
-    expect(states.at(-1).hasMore).toBe(true)
+    const s2 = states.at(-1)!
+    expect(s2.items).toHaveLength(4)
+    expect(s2.hasMore).toBe(true)
 
     await store.loadMore() // final page (only one item)
     await flush()
-    expect(states.at(-1).items).toHaveLength(5)
-    expect(states.at(-1).hasMore).toBe(false)
+    const s3 = states.at(-1)!
+    expect(s3.items).toHaveLength(5)
+    expect(s3.hasMore).toBe(false)
 
     // loadMore again should not trigger fetch because hasMore=false
     await store.loadMore()
@@ -153,14 +165,16 @@ describe('createPaginatedBooksStore', () => {
 
     await store.refresh()
     await flush()
-    const refreshed = states.at(-1)
-    expect(refreshed.items.map((b: any) => b.id)).toEqual(['I0', 'I1'])
+    const refreshed = states.at(-1)!
+    expect(refreshed.items.map((b) => b.id)).toEqual(['I0', 'I1'])
 
     unsub()
     // Calls: start=0, start=2, start=4, refresh start=0 => 4 calls total
-    const callStarts = fetchMock.mock.calls.map((c) =>
-      new URL(c[0] as string).searchParams.get('start')
-    )
+    const callStarts = fetchMock.mock.calls.map((c) => {
+      const u = c[0] as string
+      const parsed = u.startsWith('http') ? new URL(u) : new URL(u, 'http://localhost')
+      return parsed.searchParams.get('start')
+    })
     expect(callStarts).toEqual(['0', '2', '4', '0'])
   })
 
@@ -169,11 +183,11 @@ describe('createPaginatedBooksStore', () => {
     let calls = 0
     vi.stubGlobal(
       'fetch',
-      vi.fn(
-        () =>
-          new Promise(async (resolve) => {
-            calls++
-            await new Promise((r) => setTimeout(r, 10))
+      vi.fn(() => {
+        // Avoid async executor pattern; perform async chain inside then.
+        calls++
+        return new Promise((resolve) => {
+          setTimeout(() => {
             resolve({
               ok: true,
               status: 200,
@@ -182,8 +196,9 @@ describe('createPaginatedBooksStore', () => {
               text: async () => '{}',
             })
             deferred.resolve?.()
-          })
-      ) as unknown as typeof fetch
+          }, 10)
+        })
+      }) as unknown as typeof fetch
     )
 
     const store = createPaginatedBooksStore({ size: 1 })

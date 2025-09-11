@@ -3,16 +3,26 @@
 // We keep this file intentionally small and framework agnostic so it can be
 // reused inside Svelte load functions, components, or custom stores.
 
+// Ensure DOM lib types; if ambient types missing (node test), fall back to minimal declarations.
+// (ESLint no-undef flagged RequestInit in some contexts.)
+// Infer the init type from global fetch without using explicit 'any'. Fallback to generic object.
+type _FetchFn = typeof fetch extends (input: infer _I, init?: infer R) => Promise<unknown>
+  ? { init: R }
+  : never
+type _RequestInit = _FetchFn extends { init: infer R } ? R : Record<string, unknown>
+
 export interface RequestOptions {
   /** Additional fetch init overrides */
-  init?: RequestInit
+  init?: _RequestInit
   /** Abort controller signal to cancel an in-flight request */
   signal?: AbortSignal
 }
 
 // In a larger app this could come from an env var (e.g. import.meta.env.VITE_API_BASE)
 // For now we hardcode because only one function endpoint is defined.
-const BOOKS_ENDPOINT = 'https://us-central1-flexread-egh.cloudfunctions.net/getBooks'
+const BOOKS_ENDPOINT = import.meta.env.DEV
+  ? '/api/books'
+  : 'https://us-central1-flexread-egh.cloudfunctions.net/getBooks'
 // Relative path for book text (served by local dev proxy / backend). Adjust with env var if needed.
 const TEXT_ENDPOINT = 'https://us-central1-flexread-egh.cloudfunctions.net/getText'
 

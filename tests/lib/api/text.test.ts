@@ -8,7 +8,7 @@ describe('getBookText', () => {
 
   it('requests text with defaults', async () => {
     const mock = { text: 'Once upon a time.' }
-    const fetchMock = vi.fn(async (input: RequestInfo) => ({
+    const fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,
       statusText: 'OK',
@@ -19,7 +19,9 @@ describe('getBookText', () => {
 
     const res = await getBookText({ bookId: 'B1', page: 0 })
     expect(res).toEqual(mock)
-    const url = fetchMock.mock.calls[0][0] as string
+    const calls = fetchMock.mock.calls as unknown as unknown[][]
+    expect(calls.length).toBeGreaterThan(0)
+    const url = String(calls[0][0])
     expect(url).toMatch(/bookId=B1/)
     expect(url).toMatch(/page=0/)
     expect(url).toMatch(/level=ORIGINAL/)
