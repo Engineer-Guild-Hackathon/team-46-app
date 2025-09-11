@@ -18,12 +18,7 @@ export interface RequestOptions {
   signal?: AbortSignal
 }
 
-// In a larger app this could come from an env var (e.g. import.meta.env.VITE_API_BASE)
-// For now we hardcode because only one function endpoint is defined.
-const BOOKS_ENDPOINT = import.meta.env.DEV
-  ? '/api/books'
-  : 'https://us-central1-flexread-egh.cloudfunctions.net/books'
-// Relative path for book text (served by local dev proxy / backend). Adjust with env var if needed.
+const BOOKS_ENDPOINT = 'https://us-central1-flexread-egh.cloudfunctions.net/books'
 const TEXT_ENDPOINT = 'https://us-central1-flexread-egh.cloudfunctions.net/text'
 
 /** Build a query string from an object, skipping undefined / null values */
