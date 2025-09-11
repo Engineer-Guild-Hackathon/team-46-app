@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { onMount, tick, onDestroy } from 'svelte'
   // local Sentence shape for this component (keeps file self-contained)
-  type Sentence = { type: 'text' | 'subtitle'; en: string; jp?: string; level?: string }
-  import { computeWordsPerPage } from '../hooks/useWordsPerPage'
+  type Sentence = { type: 'text' | 'subtitle'; en: string; jp?: string; level?: string; sentenceNo?: number }
+  import { computeWordsPerPage, observeWordsPerPage } from '../hooks/useWordsPerPage'
+  import { getTextPage } from '$lib/api/text'
   import { ChevronLeft, ChevronRight } from '@lucide/svelte'
     import Button from '$lib/components/ui/button/button.svelte'
 
@@ -11,6 +12,11 @@
   let loading = true
   let error: string | null = null
   let sentences: Sentence[] = []
+  // pagination state
+  let currentStart = 0
+  let lastEnd = 0
+  let prevStarts: number[] = []
+  let canNext = false
   let selected = new Set<number>()
   let bubbleVisible = new Set<number>()
   const bubbleTimers = new Map<number, number>()
@@ -19,27 +25,280 @@
 
   let readerEl: HTMLElement | null = null
   let wordsPerPage = 0
+  let charCountForRequest = 800
+  const AVG_CHARS_PER_WORD = 6 // average letters + space
 
-  // --- Mock data (replace with API later) ---
-  const mockSentences: Sentence[] = Array.from({ length: 100 }, (_, i) => ({
-    type: 'text',
-    en: `Sentence number ${i + 1} with some additional words to test the layout.`,
-    jp: `文番号${i + 1}。レイアウトをテストするための追加の単語を含む。`,
-    level: `${100 + i}`,
-  }))
-
-  async function loadPage(_p = 0) {
+  async function loadPage(start = 0, charCountParam?: number) {
     loading = true
     error = null
+    sentences = []
     try {
-      // simulate network delay
-      await new Promise((r) => setTimeout(r, 650))
-      sentences = mockSentences
+      // Request real text page from backend
+      const res = await getTextPage({
+        bookId,
+        startSentenceNo: start,
+        userId: 'anonymous',
+        charCount: charCountParam ?? charCountForRequest,
+      })
+
+      // Map to local Sentence shape
+      sentences = res.text.map((t) => ({ type: t.type, en: t.en, jp: t.jp, level: String(t.sentenceNo), sentenceNo: t.sentenceNo }))
+      // update pagination state
+      lastEnd = res.endSentenceNo
+      currentStart = start
+  // Important: render the reader content now so measurement can find it
+  loading = false
+      
+  // eslint-disable-next-line no-console
+  console.debug('[BookPage] Initial sentences loaded:', sentences.length, 'sentences from', currentStart, 'to', lastEnd)
+
+      // Wait for DOM to render so we can measure whether content overflows
+      await tick()
+      await new Promise(r => requestAnimationFrame(r)) // Extra frame for element refs to be set
+      await tick() // Extra tick to ensure element binding is ready
+      
+      // Ensure the reader element actually exists (loading branch swaps to reader)
+      // Retry a few frames if needed
+      if (!readerEl) {
+        for (let tries = 0; tries < 8 && !readerEl; tries++) {
+          readerEl = document.querySelector('article.reader') as HTMLElement | null
+          if (readerEl) break
+          await new Promise(r => requestAnimationFrame(r))
+          await tick()
+        }
+      }
+      
+      // eslint-disable-next-line no-console
+      console.debug('[BookPage] 🔍 Starting overflow detection after tick+RAF+tick...', {
+        hasReaderElBound: !!readerEl,
+        sentencesCount: sentences.length,
+        loadingState: loading,
+        errorState: error,
+        blocksLength: blocks.length,
+        currentUrl: window.location.href
+      })
+      
+      try {
+        // eslint-disable-next-line no-console
+        console.debug('[BookPage] 🔍 Checking conditions:', {
+          sentencesLength: sentences.length,
+          hasReaderEl: !!readerEl,
+          readerElFound: readerEl ? 'YES' : 'NO'
+        })
+        
+        if (sentences.length > 0) {
+          // Debug: ALWAYS check what's in the DOM, regardless of readerEl binding
+          const allArticles = document.querySelectorAll('article')
+          const allReaderClass = document.querySelectorAll('.reader')
+          const articleReader = document.querySelector('article.reader')
+          const bookTextSection = document.querySelector('.book-text')
+          
+          // eslint-disable-next-line no-console
+          console.debug('[BookPage] 🔍 DOM INSPECTION:', {
+            'article.reader found': !!articleReader,
+            '.reader found': !!allReaderClass.length,
+            'article count': allArticles.length,
+            '.book-text found': !!bookTextSection,
+            'readerEl bound': !!readerEl,
+            'loading state': loading,
+            'error state': error,
+            'allArticles': Array.from(allArticles).map(el => ({
+              tagName: el.tagName,
+              className: el.className,
+              id: el.id,
+              textContent: el.textContent?.substring(0, 50) + '...'
+            })),
+            'document.body classes': document.body.className,
+            'current HTML structure': document.querySelector('main')?.innerHTML.substring(0, 800) || 'NO MAIN FOUND'
+          })
+          
+          // Try to get readerEl if we don't have it (should be bound, but fallback just in case)
+          if (!readerEl) {
+            // Try multiple selectors to find the reader element
+            readerEl = articleReader as HTMLElement | null
+            if (!readerEl && allReaderClass.length > 0) {
+              readerEl = allReaderClass[0] as HTMLElement | null
+            }
+            if (!readerEl && allArticles.length > 0) {
+              readerEl = allArticles[0] as HTMLElement | null
+            }
+            
+            // eslint-disable-next-line no-console
+            console.debug('[BookPage] 🔍 Final readerEl found via fallback:', !!readerEl, readerEl?.className)
+          }
+          
+          if (readerEl) {
+            // eslint-disable-next-line no-console
+            console.debug('[BookPage] ✅ Proceeding with overflow detection')
+            
+            const readerRect = readerEl.getBoundingClientRect()
+            const readerStyles = window.getComputedStyle(readerEl)
+            
+            // eslint-disable-next-line no-console
+            console.debug('[BookPage] 🔍 READER CONTAINER:', {
+              maxHeight: readerStyles.maxHeight,
+              actualHeight: Math.round(readerRect.height),
+              overflow: readerStyles.overflow,
+              bottom: Math.round(readerRect.bottom),
+              sentenceCount: sentences.length,
+              elRefsCount: Object.keys(elRefs).length,
+              elRefsObject: Object.fromEntries(Object.entries(elRefs).map(([k, v]) => [k, !!v]))
+            })
+            
+            // Check for overflow and trim if needed
+            let cutOffFound = false
+            let firstCutOffIndex = -1
+            
+            // Check each sentence element to see if its bottom overflows the container
+            // Note: we need to check based on block structure since elRefs uses block-based indices
+            let sentenceIndex = 0
+            for (const block of blocks) {
+              if (block.kind === 'paragraph') {
+                for (let j = 0; j < block.items.length; j++) {
+                  const elementIndex = block.idxStart + j
+                  const sentenceEl = elRefs[elementIndex]
+                  
+                  if (sentenceEl && sentenceIndex < sentences.length) {
+                    const sentenceRect = sentenceEl.getBoundingClientRect()
+                    const sentenceBottom = sentenceRect.bottom
+                    const containerBottom = readerRect.bottom
+                    const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
+                    
+                    // eslint-disable-next-line no-console
+                    console.debug(`[BookPage] 📏 Sentence ${sentenceIndex} (elRef ${elementIndex}):`, {
+                      text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
+                      sentenceBottom: Math.round(sentenceBottom),
+                      containerBottom: Math.round(containerBottom),
+                      overflowBy: Math.round(sentenceBottom - containerBottom),
+                      overflows,
+                      hasElement: !!sentenceEl
+                    })
+                    
+                    if (overflows && firstCutOffIndex === -1) {
+                      firstCutOffIndex = sentenceIndex
+                      cutOffFound = true
+                      // eslint-disable-next-line no-console
+                      console.debug(`[BookPage] 🚨 BOTTOM OVERFLOW at sentence ${sentenceIndex} (elRef ${elementIndex}):`, {
+                        sentenceNo: sentences[sentenceIndex].sentenceNo,
+                        text: sentences[sentenceIndex].en,
+                        overflowBy: Math.round(sentenceBottom - containerBottom) + 'px'
+                      })
+                      break
+                    }
+                  } else {
+                    // eslint-disable-next-line no-console
+                    console.debug(`[BookPage] ⚠️ No element ref for sentence ${sentenceIndex} (elRef ${elementIndex})`)
+                  }
+                  
+                  sentenceIndex++
+                }
+                if (cutOffFound) break
+              } else if (block.kind === 'subtitle') {
+                // Handle subtitle block
+                const elementIndex = block.idx
+                const sentenceEl = elRefs[elementIndex]
+                
+                if (sentenceEl && sentenceIndex < sentences.length) {
+                  const sentenceRect = sentenceEl.getBoundingClientRect()
+                  const sentenceBottom = sentenceRect.bottom
+                  const containerBottom = readerRect.bottom
+                  const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
+                  
+                  // eslint-disable-next-line no-console
+                  console.debug(`[BookPage] 📏 Subtitle ${sentenceIndex} (elRef ${elementIndex}):`, {
+                    text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
+                    sentenceBottom: Math.round(sentenceBottom),
+                    containerBottom: Math.round(containerBottom),
+                    overflowBy: Math.round(sentenceBottom - containerBottom),
+                    overflows,
+                    hasElement: !!sentenceEl
+                  })
+                  
+                  if (overflows && firstCutOffIndex === -1) {
+                    firstCutOffIndex = sentenceIndex
+                    cutOffFound = true
+                    // eslint-disable-next-line no-console
+                    console.debug(`[BookPage] 🚨 BOTTOM OVERFLOW at subtitle ${sentenceIndex} (elRef ${elementIndex}):`, {
+                      sentenceNo: sentences[sentenceIndex].sentenceNo,
+                      text: sentences[sentenceIndex].en,
+                      overflowBy: Math.round(sentenceBottom - containerBottom) + 'px'
+                    })
+                    break
+                  }
+                } else {
+                  // eslint-disable-next-line no-console
+                  console.debug(`[BookPage] ⚠️ No element ref for subtitle ${sentenceIndex} (elRef ${elementIndex})`)
+                }
+                
+                sentenceIndex++
+              }
+            }
+            
+            // If we found overflowing content, trim it
+            if (cutOffFound && firstCutOffIndex > 0) {
+              const originalLength = sentences.length
+              const heldSentences = sentences.slice(firstCutOffIndex)
+              sentences = sentences.slice(0, firstCutOffIndex)
+              
+              // Update pagination state
+              const lastIncluded = sentences[sentences.length - 1]
+              lastEnd = lastIncluded.sentenceNo ?? (currentStart + sentences.length - 1)
+              const heldSentenceNo = heldSentences[0].sentenceNo ?? firstCutOffIndex
+              canNext = true
+              
+              // eslint-disable-next-line no-console
+              console.debug('[BookPage] ✂️ TRIMMED OVERFLOW SENTENCES:', {
+                originalCount: originalLength,
+                keptCount: sentences.length,
+                trimmedCount: heldSentences.length,
+                lastDisplayedSentenceNo: lastEnd,
+                firstHeldSentenceNo: heldSentenceNo,
+                trimmedSentences: heldSentences.map(s => `${s.sentenceNo}: "${s.en.substring(0, 30)}..."`),
+              })
+              
+              // Force a re-render to ensure the trimmed sentences are removed
+              await tick()
+            } else {
+              // No cut-off detected
+              canNext = lastEnd + 1 > start && sentences.length > 0
+              // eslint-disable-next-line no-console
+              console.debug('[BookPage] ✅ No overflow detected, all content fits')
+            }
+          } else {
+            // eslint-disable-next-line no-console
+            console.debug('[BookPage] ❌ Cannot detect overflow: no reader element found')
+            canNext = lastEnd + 1 > start && sentences.length > 0
+          }
+        } else {
+          // eslint-disable-next-line no-console
+          console.debug('[BookPage] ❌ No sentences to check')
+          canNext = false
+        }
+      } catch (me: unknown) {
+        // ignore measurement errors — fall back to previous canNext heuristic
+        // eslint-disable-next-line no-console
+        console.warn('[BookPage] measurement error', me)
+        canNext = lastEnd + 1 > start && res.text.length > 0
+      }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : 'Failed to load text'
     } finally {
       loading = false
     }
+  }
+
+  async function nextPage() {
+    if (loading || !canNext) return
+    // push current start to history so we can go back
+    prevStarts.push(currentStart)
+    const nextStart = lastEnd + 1
+    await loadPage(nextStart)
+  }
+
+  async function previousPage() {
+    if (loading || prevStarts.length === 0) return
+    const prev = prevStarts.pop() as number
+    await loadPage(prev)
   }
 
   function toggleSentence(i: number) {
@@ -121,9 +380,7 @@
   }
 
   onMount(async () => {
-    // load content first so the `.reader` element is rendered
-    await loadPage(0)
-    // allow DOM to update
+    // Ensure the .reader element exists in the DOM so we can measure it.
     await tick()
     await new Promise((r) => requestAnimationFrame(() => r(undefined)))
 
@@ -131,31 +388,32 @@
       readerEl = document.querySelector('.reader') as HTMLElement | null
     }
 
-    // diagnostic: log presence and rect
-    // eslint-disable-next-line no-console
-    console.debug('[wpp] onMount readerEl found?', !!readerEl)
+    // compute initial words-per-page based on reader element (or body fallback)
     if (readerEl) {
-      // log bounding box
-      const r = readerEl.getBoundingClientRect()
-      // eslint-disable-next-line no-console
-      console.debug('[wpp] reader rect', r)
-      // compute initial value synchronously
       wordsPerPage = computeWordsPerPage(readerEl) || 0
       // eslint-disable-next-line no-console
-      console.log('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
-      // observe for container changes and recompute
-      // const stop = observeWordsPerPage(readerEl, (n) => {
-      //   wordsPerPage = n || 0
-      //   // eslint-disable-next-line no-console
-      //   console.log('[wpp] wordsPerPage updated=', wordsPerPage)
-      // })
-      // store stop if you want to disconnect on destroy
+      console.debug('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
+      // observe for container changes and update wordsPerPage (does not auto-reload)
+      const stop = observeWordsPerPage(readerEl, (n) => {
+        wordsPerPage = n || 0
+        // eslint-disable-next-line no-console
+        console.debug('[wpp] wordsPerPage updated=', wordsPerPage)
+      })
+      onDestroy(() => stop && stop())
     } else {
-      // fallback: measure body and set
       wordsPerPage = computeWordsPerPage(document.body) || 0
       // eslint-disable-next-line no-console
-      console.log('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
+      console.debug('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
     }
+
+    // derive a conservative charCount from wordsPerPage and request the page
+    const estimated = Math.max(80, Math.min(4000, Math.floor(wordsPerPage * AVG_CHARS_PER_WORD)))
+    charCountForRequest = estimated
+    // eslint-disable-next-line no-console
+    console.debug('[BookPage] estimated charCount from wordsPerPage=', estimated)
+
+    // load first page using estimated charCount
+    await loadPage(0, charCountForRequest)
   })
 
   // Build book-like blocks: paragraphs of text and standalone subtitles
@@ -292,15 +550,15 @@
   {/if}
 
   <nav class="pagination" aria-label="Page navigation">
-    <Button class="btn btn-outline" variant="outline" type="button" aria-label="Previous page">
+    <button class="btn btn-outline" type="button" aria-label="Previous page" on:click={previousPage} disabled={prevStarts.length === 0 || loading}>
       <span class="icon"><ChevronLeft size={16} /></span>
       <span class="btn-label">Previous</span>
-    </Button>
-    <span class="page-info">Page 1 of 10</span>
-  <Button class="btn btn-outline" variant="outline" type="button" aria-label="Next page">
+    </button>
+    <span class="page-info">Start: {currentStart} — End: {lastEnd}</span>
+  <button class="btn btn-outline" type="button" aria-label="Next page" on:click={nextPage} disabled={!canNext || loading}>
       <span class="btn-label">Next</span>
       <span class="icon"><ChevronRight size={16} /></span>
-    </Button>
+    </button>
   </nav>
 </main>
 
@@ -338,7 +596,7 @@
     border-radius: 12px;
     padding: 1.25rem 1.25rem 1.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    max-height: 80vh; /* Limit to 80% of the viewport height */
+    max-height: 75vh; /* Limit to 80% of the viewport height */
     overflow: hidden; /* Hide overflowing content and rely on pagination */
   }
   /* Subtitle now shown in topbar title */
