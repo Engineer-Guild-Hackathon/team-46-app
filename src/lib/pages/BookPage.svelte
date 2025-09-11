@@ -120,26 +120,41 @@
   }
 
   onMount(async () => {
-    // ensure readerEl is ready
+    // load content first so the `.reader` element is rendered
+    await loadPage(0)
+    // allow DOM to update
     await tick()
     await new Promise((r) => requestAnimationFrame(() => r(undefined)))
+
     if (!readerEl) {
       readerEl = document.querySelector('.reader') as HTMLElement | null
     }
 
+    // diagnostic: log presence and rect
+    // eslint-disable-next-line no-console
+    console.debug('[wpp] onMount readerEl found?', !!readerEl)
     if (readerEl) {
+      // log bounding box
+      const r = readerEl.getBoundingClientRect()
+      // eslint-disable-next-line no-console
+      console.debug('[wpp] reader rect', r)
       // compute initial value synchronously
       wordsPerPage = computeWordsPerPage(readerEl) || 0
-      console.log('wordsPerPage=', wordsPerPage)
+      // eslint-disable-next-line no-console
+      console.log('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
       // observe for container changes and recompute
       const stop = observeWordsPerPage(readerEl, (n) => {
         wordsPerPage = n || 0
-        console.log('wordsPerPage updated=', wordsPerPage)
+        // eslint-disable-next-line no-console
+        console.log('[wpp] wordsPerPage updated=', wordsPerPage)
       })
       // store stop if you want to disconnect on destroy
+    } else {
+      // fallback: measure body and set
+      wordsPerPage = computeWordsPerPage(document.body) || 0
+      // eslint-disable-next-line no-console
+      console.log('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
     }
-
-    void loadPage(0)
   })
 
   // Build book-like blocks: paragraphs of text and standalone subtitles
@@ -209,8 +224,7 @@
   $: blocks = buildBlocks(sentences)
   $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
   $: headerTitle = (sentences.find((s) => s.type === 'subtitle')?.en?.replace(/\r?\n/g, ' ')) ?? `Book ${bookId}`
-  $: if (typeof wordsPerPage === 'number') console.log('wordsPerPage=', wordsPerPage)
-
+  
   function formatSentence(t: string): string {
     return t.replace(/\s+/g, ' ').trim()
   }
