@@ -32,11 +32,27 @@
   let lastLoadCompletedAt: number | null = null
   // Simple page cache for going backwards: startSentenceNo -> displayed page
   const pageCache = new Map<number, { sentences: Sentence[]; endSentenceNo: number }>()
+  // Word-level telemetry (long-press selects a word)
+  let wordClickCountForRequest = 0
+  // Persisted user reading rate (backend provided) stored per book
+  let userRate: number | null = null
+  const rateStorageKey = (id: string) => `bookRate:${id}`
+  // Currently highlighted word index per sentence
+  let wordHighlights: Record<number, number> = {}
+  // Timestamp of last word selection (reference for potential suppression logic)
+  let lastWordSelectionAt = 0
+  // Touch long-press support (mobile simulate right-click)
+  const touchPresses: Record<number, { timer: number; startX: number; startY: number; triggered: boolean }> = {}
+  const LONG_PRESS_TOUCH_MS = 520
+  const TOUCH_MOVE_CANCEL_PX = 16
+  let suppressClickForSentence: number | null = null
+  let lastLongPressAt = 0
 
   async function loadPage(start = 0, charCountParam?: number, preferCache = false) {
     loading = true
     error = null
     sentences = []
+  // clear transient word render cache (recomputed lazily)
     try {
       let fromCache = false
       let apiTextLength = 0
@@ -61,10 +77,10 @@
           startSentenceNo: start,
           userId: 'anonymous',
           charCount: charCountParam ?? charCountForRequest,
-          wordClickCount: null as number | null, // not yet tracked
+          wordClickCount: wordClickCountForRequest || null,
           sentenceClickCount: sentenceClickCountForRequest || null,
           time: timeSec,
-          rate: null as number | null, // not yet estimated
+          rate: userRate,
         }
         // eslint-disable-next-line no-console
         console.debug('[BookPage] getTextPage params ->', apiParams)
@@ -72,6 +88,10 @@
         // Request real text page from backend
         const apiRes = await getTextPage(apiParams)
         res = apiRes
+        if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
+          userRate = apiRes.rate
+          try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch {}
+        }
 
         // Map to local Sentence shape
         sentences = res.text.map((t) => ({ type: t.type, en: t.en, jp: t.jp, level: String(t.sentenceNo), sentenceNo: t.sentenceNo }))
@@ -85,6 +105,7 @@
       
   // Reset counters for the next request (we've just reported them)
   sentenceClickCountForRequest = 0
+  wordClickCountForRequest = 0
 
   // eslint-disable-next-line no-console
   console.debug('[BookPage] Initial sentences loaded:', sentences.length, 'sentences from', currentStart, 'to', lastEnd)
@@ -348,15 +369,166 @@
 
   function toggleSentence(i: number) {
     const isNew = !selected.has(i)
-    // Always keep highlighted once clicked
-    if (isNew) {
-      selected.add(i)
-    }
+    if (isNew) selected.add(i)
     selected = new Set(selected)
-  // Record that the user requested a translation bubble
-  sentenceClickCountForRequest++
-    // Show translation bubble (re-click re-shows)
+    sentenceClickCountForRequest++
     showBubble(i)
+  }
+
+  function handleClick(i: number, e: MouseEvent) {
+    if (e.button !== 0) return // only left button
+    if (suppressClickForSentence === i && Date.now() - lastLongPressAt < 600) {
+      // skip sentence toggle if a long-press just triggered word highlight
+      suppressClickForSentence = null
+      return
+    }
+    // Left click now toggles sentence translation
+    toggleSentence(i)
+  }
+
+  function handleContextMenu(i: number, e: MouseEvent) {
+    e.preventDefault()
+    // Right click now toggles a word highlight
+    const sel = window.getSelection()
+    if (sel && sel.type === 'Range') return
+    const idx = getWordIndexAtPointer(i, e as unknown as PointerEvent)
+    console.debug('[BookPage] contextmenu event', { sentenceIndex: i, idx })
+    if (idx == null) return
+    if (wordHighlights[i] === idx) {
+      // Keep existing highlight; do not remove on repeated right-click
+      console.debug('[BookPage] word already highlighted (contextmenu)', { sentenceIndex: i, wordIndex: idx })
+      return
+    }
+    wordHighlights[i] = idx
+    reassignWordHighlights()
+    wordClickCountForRequest++
+    lastWordSelectionAt = Date.now()
+    console.debug('[BookPage] word selected (contextmenu)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
+  }
+
+  // Fallback: capture right-button mousedown early (some browsers may not fire contextmenu quickly on mobile emulation)
+  function handleMouseDown(i: number, e: MouseEvent) {
+    if (e.button !== 2) return
+    // mirror context menu behavior without preventing default yet (allow us to suppress later)
+    const sel = window.getSelection()
+    if (sel && sel.type === 'Range') return
+    const idx = getWordIndexAtPointer(i, e as unknown as PointerEvent)
+    console.debug('[BookPage] mousedown right button', { sentenceIndex: i, idx })
+    if (idx == null) return
+    if (wordHighlights[i] === idx) {
+      delete wordHighlights[i]
+      reassignWordHighlights()
+      console.debug('[BookPage] word highlight removed (mousedown)', { sentenceIndex: i, wordIndex: idx })
+      return
+    }
+    wordHighlights[i] = idx
+    reassignWordHighlights()
+    wordClickCountForRequest++
+    lastWordSelectionAt = Date.now()
+    console.debug('[BookPage] word selected (mousedown)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
+  }
+
+  // Helper to get word index from pointer/mouse event
+  function getWordIndexAtPointer(i: number, e: PointerEvent): number | undefined {
+    return selectWordAtPointer(i, e)
+  }
+
+  // --- Touch long press (simulate right click) ---
+  function touchPointerDown(i: number, e: PointerEvent) {
+    if (e.pointerType !== 'touch') return
+    // Avoid interfering with multi-touch gestures
+    if ((e as any).isPrimary === false) return
+    const existing = touchPresses[i]
+    if (existing && existing.timer) window.clearTimeout(existing.timer)
+    touchPresses[i] = {
+      startX: e.clientX,
+      startY: e.clientY,
+      triggered: false,
+      timer: window.setTimeout(() => {
+        // Long press elapsed
+        const idx = getWordIndexAtPointer(i, e)
+        if (idx == null) return
+        if (wordHighlights[i] !== idx) {
+          wordHighlights[i] = idx
+          reassignWordHighlights()
+          wordClickCountForRequest++
+          lastWordSelectionAt = Date.now()
+        }
+        // prevent upcoming click from toggling sentence
+        suppressClickForSentence = i
+        lastLongPressAt = Date.now()
+        touchPresses[i].triggered = true
+        // Suppress native selection
+        try { window.getSelection()?.removeAllRanges() } catch {}
+        // eslint-disable-next-line no-console
+        console.debug('[BookPage] touch long-press word highlight', { sentenceIndex: i, wordIndex: idx })
+      }, LONG_PRESS_TOUCH_MS)
+    }
+  }
+
+  function touchPointerMove(i: number, e: PointerEvent) {
+    if (e.pointerType !== 'touch') return
+    const press = touchPresses[i]
+    if (!press || press.triggered) return
+    const dx = e.clientX - press.startX
+    const dy = e.clientY - press.startY
+    if (Math.hypot(dx, dy) > TOUCH_MOVE_CANCEL_PX) {
+      window.clearTimeout(press.timer)
+      delete touchPresses[i]
+    }
+  }
+
+  function touchPointerUp(i: number, e: PointerEvent) {
+    if (e.pointerType !== 'touch') return
+    const press = touchPresses[i]
+    if (!press) return
+    window.clearTimeout(press.timer)
+    const wasTriggered = press.triggered
+    delete touchPresses[i]
+    if (wasTriggered) {
+      // prevent any stray selection
+      try { window.getSelection()?.removeAllRanges() } catch {}
+      e.preventDefault?.()
+    }
+  }
+
+  function selectWordAtPointer(i: number, e: PointerEvent) {
+    const spanEl = elRefs[i]
+    if (!spanEl) return
+    // Try to find exact word span under pointer
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    let targetSpan: HTMLElement | null = null
+    if (el && spanEl.contains(el)) {
+      const candidate = (el.closest('span.word') || el) as HTMLElement
+      if (candidate && candidate.dataset?.wi !== undefined) targetSpan = candidate
+    }
+  let tokenIndex: number | undefined
+  if (targetSpan && targetSpan.dataset.wi) tokenIndex = Number(targetSpan.dataset.wi)
+  else tokenIndex = pickWordByRatio(i, e)
+  if (tokenIndex === undefined || Number.isNaN(tokenIndex)) return
+  return tokenIndex
+  }
+
+  function pickWordByRatio(i: number, e: PointerEvent): number | undefined {
+    const s = sentences[i]
+    if (!s) return undefined
+    const text = formatSentence(s.en)
+    const tokens = text.split(/(\s+)/)
+    const nonWs = tokens.map((tok, idx) => ({ tok, idx })).filter(t => !/^\s*$/.test(t.tok))
+    const spanEl = elRefs[i]
+    if (!spanEl || nonWs.length === 0) return undefined
+    const rect = spanEl.getBoundingClientRect()
+    const relX = Math.min(Math.max(0, e.clientX - rect.left), Math.max(0.01, rect.width))
+    const ratio = rect.width > 0 ? relX / rect.width : 0
+    const chosen = Math.min(nonWs.length - 1, Math.max(0, Math.floor(ratio * nonWs.length)))
+    return nonWs[chosen].idx
+  }
+
+  function reassignWordHighlights() {
+    // trigger Svelte reactivity for object mutation
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  wordHighlights = { ...wordHighlights }
+  console.debug('[BookPage] wordHighlights state', wordHighlights)
   }
 
   function showBubble(i: number) {
@@ -427,6 +599,14 @@
   }
 
   onMount(async () => {
+    // Load persisted user rate if available
+    try {
+      const stored = localStorage.getItem(rateStorageKey(bookId))
+      if (stored) {
+        const num = Number(stored)
+        if (!Number.isNaN(num)) userRate = num
+      }
+    } catch {}
     // Ensure the .reader element exists in the DOM so we can measure it.
     await tick()
     await new Promise((r) => requestAnimationFrame(() => r(undefined)))
@@ -530,6 +710,18 @@
   $: blocks = buildBlocks(sentences)
   // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
   $: headerTitle = (sentences.find((s) => s.type === 'subtitle')?.en?.replace(/\r?\n/g, ' ')) ?? `Book ${bookId}`
+  $: rateDisplay = userRate !== null ? userRate : '—'
+
+  function renderSentenceHTML(i: number, s: Sentence, highlightIdx?: number): string {
+    const text = formatSentence(s.en)
+    const tokens = text.split(/(\s+)/)
+    return tokens.map((tok, idx) => {
+      if (/^\s*$/.test(tok)) return tok
+      const safe = tok.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const cls = idx === highlightIdx ? 'word word-highlight' : 'word'
+      return `<span class="${cls}" data-wi="${idx}">${safe}</span>`
+    }).join('')
+  }
   
   function formatSentence(t: string): string {
     return t.replace(/\s+/g, ' ').trim()
@@ -575,18 +767,24 @@
                     tabindex="0"
                     class="sentenceInline {selected.has(b.idxStart + j) ? 'selected' : ''}"
                     bind:this={elRefs[b.idxStart + j]}
-                    on:click={() => toggleSentence(b.idxStart + j)}
+                    on:click={(e) => handleClick(b.idxStart + j, e)}
+                    on:mousedown={(e) => handleMouseDown(b.idxStart + j, e)}
+                    on:contextmenu={(e) => handleContextMenu(b.idxStart + j, e)}
+                    on:pointerdown={(e) => touchPointerDown(b.idxStart + j, e)}
+                    on:pointermove={(e) => touchPointerMove(b.idxStart + j, e)}
+                    on:pointerup={(e) => touchPointerUp(b.idxStart + j, e)}
                     on:keydown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSentence(b.idxStart + j) }
                       if (e.key === 'Escape') { e.preventDefault(); hideBubble(b.idxStart + j) }
                     }}
                     aria-pressed={selected.has(b.idxStart + j)}
                   >
-                    {formatSentence(s.en)}
+                    {@html renderSentenceHTML(b.idxStart + j, s, wordHighlights[b.idxStart + j])}
                     {#if bubbleVisible.has(b.idxStart + j)}
                       <span class="jp-bubble" aria-label="Japanese translation">{s.jp}</span>
                     {/if}
                   </span>
+                  <span class="sr-only">.</span>
                 {/key}
               {/each}
             </p>
@@ -601,7 +799,7 @@
       <span class="icon"><ChevronLeft size={16} /></span>
       <span class="btn-label">Previous</span>
     </button>
-    <span class="page-info">Start: {currentStart} — End: {lastEnd}</span>
+  <span class="page-info rate">Rate: {rateDisplay}</span>
   <button class="btn btn-outline" type="button" aria-label="Next page" on:click={nextPage} disabled={!canNext || loading}>
       <span class="btn-label">Next</span>
       <span class="icon"><ChevronRight size={16} /></span>
@@ -645,6 +843,9 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     max-height: 75vh; /* Limit to 80% of the viewport height */
     overflow: hidden; /* Hide overflowing content and rely on pagination */
+  word-break: normal;
+  overflow-wrap: anywhere;
+  hyphens: auto;
   }
   /* Subtitle now shown in topbar title */
   .sentence.skeleton { background: #f2f4f8; overflow: hidden; }
@@ -662,33 +863,35 @@
     position: relative;
     cursor: pointer;
     border-radius: 4px;
-    padding: 0 .06em;
+    padding: 0 .04em;
+    box-decoration-break: clone;
+    /* Allow native text selection */
+    -webkit-touch-callout: none;
   }
   /* add a natural space after each sentence inline element */
   .sentenceInline::after { content: ' '; }
   /* but not after the last sentence in a paragraph */
   .reader p > .sentenceInline:last-child::after { content: ''; }
-  .sentenceInline:hover { background: #fff1be; }
   .sentenceInline.selected { background: #ffe9a8; }
   .sentenceInline:focus-visible { outline: 2px solid rgba(100,150,250,.55); outline-offset: 2px; }
   .jp-bubble {
     position: absolute;
     left: 0; right: auto;
     bottom: -2.2em;
-  width: max-content;
-  min-width: 260px;
-  max-width: min(72ch, 80vw);
-  white-space: normal;
-  word-break: normal;
-  overflow-wrap: anywhere;
-  line-break: auto;
-  font-size: .95rem;
+    width: max-content;
+    min-width: 260px;
+    max-width: min(72ch, 80vw);
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    line-break: auto;
+    font-size: .95rem;
     line-height: 1.4;
     color: #3a2c00;
     background: #fffef8;
     border: 1px solid #ffd18a;
     border-radius: 6px;
-  padding: .4rem .6rem;
+    padding: .4rem .6rem;
     box-shadow: 0 2px 6px rgba(0,0,0,.08);
     z-index: 1;
   }
@@ -708,4 +911,16 @@
     margin-top: 1rem;
   }
   .pagination .page-info { color: #444; font-size: .95rem; }
+  .pagination .rate { margin-left: .5rem; }
+  :global(.word) { cursor: pointer; word-break: break-word; }
+  :global(.word-highlight) {
+    background: #e0f0ff;
+    color: #0a56ad !important;
+    border-radius: 3px;
+    padding: 0 .05em;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.10);
+    font-weight: 600;
+    text-decoration: underline 2px solid #0a56ad;
+    text-underline-offset: 2px;
+  }
 </style>
