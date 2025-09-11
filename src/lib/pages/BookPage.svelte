@@ -17,7 +17,6 @@
 
   let readerEl: HTMLElement | null = null
   let wordsPerPage = 0
-  let currentPageIndex = 0
 
   // --- Mock data (replace with API later) ---
   const mockSentences: Sentence[] = Array.from({ length: 100 }, (_, i) => ({
@@ -222,7 +221,7 @@
   }
 
   $: blocks = buildBlocks(sentences)
-  $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
+  // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
   $: headerTitle = (sentences.find((s) => s.type === 'subtitle')?.en?.replace(/\r?\n/g, ' ')) ?? `Book ${bookId}`
   
   function formatSentence(t: string): string {
