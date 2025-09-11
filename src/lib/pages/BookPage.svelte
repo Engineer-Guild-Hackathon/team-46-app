@@ -27,28 +27,65 @@
   let wordsPerPage = 0
   let charCountForRequest = 800
   const AVG_CHARS_PER_WORD = 6 // average letters + space
+  // Telemetry for backend: count sentence translation clicks, and time between loads
+  let sentenceClickCountForRequest = 0
+  let lastLoadCompletedAt: number | null = null
+  // Simple page cache for going backwards: startSentenceNo -> displayed page
+  const pageCache = new Map<number, { sentences: Sentence[]; endSentenceNo: number }>()
 
-  async function loadPage(start = 0, charCountParam?: number) {
+  async function loadPage(start = 0, charCountParam?: number, preferCache = false) {
     loading = true
     error = null
     sentences = []
     try {
-      // Request real text page from backend
-      const res = await getTextPage({
-        bookId,
-        startSentenceNo: start,
-        userId: 'anonymous',
-        charCount: charCountParam ?? charCountForRequest,
-      })
+      let fromCache = false
+      let apiTextLength = 0
+      // Compute telemetry: seconds since last completed page load
+      const timeSec = lastLoadCompletedAt ? Math.max(0, Math.round((Date.now() - lastLoadCompletedAt) / 1000)) : null
+      let res: { text: Array<{ type: 'text' | 'subtitle'; sentenceNo: number; en: string; jp?: string }>; endSentenceNo: number }
 
-      // Map to local Sentence shape
-      sentences = res.text.map((t) => ({ type: t.type, en: t.en, jp: t.jp, level: String(t.sentenceNo), sentenceNo: t.sentenceNo }))
-      // update pagination state
-      lastEnd = res.endSentenceNo
-      currentStart = start
+      // Try cache for previous pages
+      if (preferCache && pageCache.has(start)) {
+        const cached = pageCache.get(start)!
+        sentences = cached.sentences.slice()
+        lastEnd = cached.endSentenceNo
+        currentStart = start
+        apiTextLength = sentences.length
+        fromCache = true
+        // eslint-disable-next-line no-console
+        console.debug('[BookPage] Loaded page from cache:', { start, cachedCount: sentences.length, endSentenceNo: lastEnd })
+      } else {
+        // Build and log API params
+        const apiParams = {
+          bookId,
+          startSentenceNo: start,
+          userId: 'anonymous',
+          charCount: charCountParam ?? charCountForRequest,
+          wordClickCount: null as number | null, // not yet tracked
+          sentenceClickCount: sentenceClickCountForRequest || null,
+          time: timeSec,
+          rate: null as number | null, // not yet estimated
+        }
+        // eslint-disable-next-line no-console
+        console.debug('[BookPage] getTextPage params ->', apiParams)
+
+        // Request real text page from backend
+        const apiRes = await getTextPage(apiParams)
+        res = apiRes
+
+        // Map to local Sentence shape
+        sentences = res.text.map((t) => ({ type: t.type, en: t.en, jp: t.jp, level: String(t.sentenceNo), sentenceNo: t.sentenceNo }))
+        // update pagination state
+        lastEnd = res.endSentenceNo
+        currentStart = start
+        apiTextLength = res.text.length
+      }
   // Important: render the reader content now so measurement can find it
   loading = false
       
+  // Reset counters for the next request (we've just reported them)
+  sentenceClickCountForRequest = 0
+
   // eslint-disable-next-line no-console
   console.debug('[BookPage] Initial sentences loaded:', sentences.length, 'sentences from', currentStart, 'to', lastEnd)
 
@@ -278,12 +315,18 @@
         // ignore measurement errors — fall back to previous canNext heuristic
         // eslint-disable-next-line no-console
         console.warn('[BookPage] measurement error', me)
-        canNext = lastEnd + 1 > start && res.text.length > 0
+        canNext = lastEnd + 1 > start && apiTextLength > 0
       }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : 'Failed to load text'
     } finally {
       loading = false
+  // Mark completion time to measure delay until next request
+  lastLoadCompletedAt = Date.now()
+      // Cache the displayed page for back navigation
+      if (sentences.length > 0) {
+        pageCache.set(currentStart, { sentences: sentences.slice(), endSentenceNo: lastEnd })
+      }
     }
   }
 
@@ -292,13 +335,15 @@
     // push current start to history so we can go back
     prevStarts.push(currentStart)
     const nextStart = lastEnd + 1
-    await loadPage(nextStart)
+  // Always fetch next page from API (do not use cache)
+  await loadPage(nextStart, undefined, false)
   }
 
   async function previousPage() {
     if (loading || prevStarts.length === 0) return
     const prev = prevStarts.pop() as number
-    await loadPage(prev)
+  // Prefer cache for previous pages
+  await loadPage(prev, undefined, true)
   }
 
   function toggleSentence(i: number) {
@@ -308,6 +353,8 @@
       selected.add(i)
     }
     selected = new Set(selected)
+  // Record that the user requested a translation bubble
+  sentenceClickCountForRequest++
     // Show translation bubble (re-click re-shows)
     showBubble(i)
   }
