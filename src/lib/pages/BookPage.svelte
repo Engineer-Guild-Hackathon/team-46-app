@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
-  import type { Sentence } from '../api/text'
+  // local Sentence shape for this component (keeps file self-contained)
+  type Sentence = { type: 'text' | 'subtitle'; en: string; jp?: string; level?: string }
+  import { computeWordsPerPage, observeWordsPerPage } from '../hooks/useWordsPerPage'
 
   export let bookId: string
 
@@ -13,39 +15,17 @@
   const elRefs: Record<number, HTMLElement | null> = {}
   const AUTO_HIDE_MS = 2600 // auto-hide translation after a short delay
 
+  let readerEl: HTMLElement | null = null
+  let wordsPerPage = 0
+  let currentPageIndex = 0
+
   // --- Mock data (replace with API later) ---
-  const mockSentences: Sentence[] = [
-    {
-      type: 'subtitle',
-      en: 'CHAPTER I.\r\nDown the Rabbit-Hole',
-      jp: 'チャプター1. ウサギの穴の中へ',
-      level: '160',
-    },
-    {
-      type: 'text',
-      en: 'Alice said, "I feel strange. I am getting very small."',
-      jp: 'アリスは「体が小さくなっていくよう！」と言いました',
-      level: '145',
-    },
-    {
-      type: 'text',
-      en: 'She looked at the bottle and decided to drink.',
-      jp: '彼女は瓶を見て、飲むことにしました。',
-      level: '150',
-    },
-    {
-      type: 'text',
-      en: 'Suddenly, the room felt much larger than before.',
-      jp: '突然、部屋が先ほどよりずっと大きく感じられました。',
-      level: '140',
-    },
-    {
-      type: 'text',
-      en: 'Alice took a deep breath and continued on her way.',
-      jp: 'アリスは深呼吸をして、先へ進みました。',
-      level: '135',
-    },
-  ]
+  const mockSentences: Sentence[] = Array.from({ length: 100 }, (_, i) => ({
+    type: 'text',
+    en: `Sentence number ${i + 1} with some additional words to test the layout.`,
+    jp: `文番号${i + 1}。レイアウトをテストするための追加の単語を含む。`,
+    level: `${100 + i}`,
+  }))
 
   async function loadPage(_p = 0) {
     loading = true
@@ -139,7 +119,26 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
+    // ensure readerEl is ready
+    await tick()
+    await new Promise((r) => requestAnimationFrame(() => r(undefined)))
+    if (!readerEl) {
+      readerEl = document.querySelector('.reader') as HTMLElement | null
+    }
+
+    if (readerEl) {
+      // compute initial value synchronously
+      wordsPerPage = computeWordsPerPage(readerEl) || 0
+      console.log('wordsPerPage=', wordsPerPage)
+      // observe for container changes and recompute
+      const stop = observeWordsPerPage(readerEl, (n) => {
+        wordsPerPage = n || 0
+        console.log('wordsPerPage updated=', wordsPerPage)
+      })
+      // store stop if you want to disconnect on destroy
+    }
+
     void loadPage(0)
   })
 
@@ -147,27 +146,70 @@
   type Block = { kind: 'paragraph'; idxStart: number; idxEnd: number; items: Sentence[] } | { kind: 'subtitle'; item: Sentence; idx: number }
   function buildBlocks(list: Sentence[]): Block[] {
     const blocks: Block[] = []
-    let para: { idxStart: number; items: Sentence[] } | null = null
-    list.forEach((s, i) => {
+    let idxStart = -1
+    let acc: Sentence[] = []
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i]
       if (s.type === 'subtitle') {
-        if (para && para.items.length) {
-          blocks.push({ kind: 'paragraph', idxStart: para.idxStart, idxEnd: i - 1, items: para.items })
-          para = null
+        if (acc.length > 0) {
+          blocks.push({ kind: 'paragraph', idxStart, idxEnd: idxStart + acc.length - 1, items: acc.slice() })
+          acc = []
+          idxStart = -1
         }
         blocks.push({ kind: 'subtitle', item: s, idx: i })
       } else {
-        if (!para) para = { idxStart: i, items: [] }
-        para.items.push(s)
+        if (idxStart === -1) idxStart = i
+        acc.push(s)
       }
-    })
-    if (para && para.items.length) {
-      blocks.push({ kind: 'paragraph', idxStart: para.idxStart, idxEnd: para.idxStart + para.items.length - 1, items: para.items })
+    }
+    if (acc.length > 0 && idxStart !== -1) {
+      blocks.push({ kind: 'paragraph', idxStart, idxEnd: idxStart + acc.length - 1, items: acc.slice() })
     }
     return blocks
   }
 
+  function paginateByWords(sentencesList: Sentence[], wordsPerPg: number) {
+    if (!wordsPerPg || wordsPerPg < 1) return [sentencesList]
+    const pages: Sentence[][] = []
+    let current: Sentence[] = []
+    let count = 0
+    for (const s of sentencesList) {
+      const w = (s.en || '').split(/\s+/).filter(Boolean).length
+      if (count + w > wordsPerPg && current.length > 0) {
+        pages.push(current)
+        current = []
+        count = 0
+      }
+
+      if (w > wordsPerPg) {
+        // split long sentence into multiple chunks of wordsPerPg
+        const words = (s.en || '').split(/\s+/).filter(Boolean)
+        for (let k = 0; k < words.length; k += wordsPerPg) {
+          const chunkWords = words.slice(k, k + wordsPerPg)
+          const chunkText = chunkWords.join(' ')
+          const chunkSentence: Sentence = {
+            type: s.type,
+            en: chunkText,
+            jp: s.jp,
+            level: s.level,
+          }
+          pages.push([chunkSentence])
+        }
+        count = 0
+        continue
+      }
+
+      current.push(s)
+      count = count + w
+    }
+    if (current.length) pages.push(current)
+    return pages
+  }
+
   $: blocks = buildBlocks(sentences)
+  $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
   $: headerTitle = (sentences.find((s) => s.type === 'subtitle')?.en?.replace(/\r?\n/g, ' ')) ?? `Book ${bookId}`
+  $: if (typeof wordsPerPage === 'number') console.log('wordsPerPage=', wordsPerPage)
 
   function formatSentence(t: string): string {
     return t.replace(/\s+/g, ' ').trim()
@@ -199,7 +241,7 @@
     <p class="error">{error}</p>
   {:else}
     <section class="book-text">
-      <article class="reader" aria-live="polite">
+      <article class="reader" aria-live="polite" bind:this={readerEl}>
         {#each blocks as b}
           {#if b.kind === 'paragraph'}
             <p>
@@ -260,6 +302,8 @@
     border-radius: 12px;
     padding: 1.25rem 1.25rem 1.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    max-height: 80vh; /* Limit to 80% of the viewport height */
+    overflow: hidden; /* Hide overflowing content and rely on pagination */
   }
   /* Subtitle now shown in topbar title */
   .sentence.skeleton { background: #f2f4f8; overflow: hidden; }
