@@ -41,7 +41,7 @@
   }
 
   // React to sort changes (immediate)
-  let prevSort = sort
+  let prevSort: 'recommended' | 'popularity' | 'year' = sort
   $: if (sort !== prevSort) {
     prevSort = sort
     refreshData()
