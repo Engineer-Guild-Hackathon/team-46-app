@@ -2,7 +2,9 @@
   import { onMount, tick } from 'svelte'
   // local Sentence shape for this component (keeps file self-contained)
   type Sentence = { type: 'text' | 'subtitle'; en: string; jp?: string; level?: string }
-  import { computeWordsPerPage, observeWordsPerPage } from '../hooks/useWordsPerPage'
+  import { computeWordsPerPage } from '../hooks/useWordsPerPage'
+  import { ChevronLeft, ChevronRight } from '@lucide/svelte'
+    import Button from '$lib/components/ui/button/button.svelte'
 
   export let bookId: string
 
@@ -142,11 +144,11 @@
       // eslint-disable-next-line no-console
       console.log('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
       // observe for container changes and recompute
-      const stop = observeWordsPerPage(readerEl, (n) => {
-        wordsPerPage = n || 0
-        // eslint-disable-next-line no-console
-        console.log('[wpp] wordsPerPage updated=', wordsPerPage)
-      })
+      // const stop = observeWordsPerPage(readerEl, (n) => {
+      //   wordsPerPage = n || 0
+      //   // eslint-disable-next-line no-console
+      //   console.log('[wpp] wordsPerPage updated=', wordsPerPage)
+      // })
       // store stop if you want to disconnect on destroy
     } else {
       // fallback: measure body and set
@@ -182,43 +184,43 @@
     return blocks
   }
 
-  function paginateByWords(sentencesList: Sentence[], wordsPerPg: number) {
-    if (!wordsPerPg || wordsPerPg < 1) return [sentencesList]
-    const pages: Sentence[][] = []
-    let current: Sentence[] = []
-    let count = 0
-    for (const s of sentencesList) {
-      const w = (s.en || '').split(/\s+/).filter(Boolean).length
-      if (count + w > wordsPerPg && current.length > 0) {
-        pages.push(current)
-        current = []
-        count = 0
-      }
+  // function paginateByWords(sentencesList: Sentence[], wordsPerPg: number) {
+  //   if (!wordsPerPg || wordsPerPg < 1) return [sentencesList]
+  //   const pages: Sentence[][] = []
+  //   let current: Sentence[] = []
+  //   let count = 0
+  //   for (const s of sentencesList) {
+  //     const w = (s.en || '').split(/\s+/).filter(Boolean).length
+  //     if (count + w > wordsPerPg && current.length > 0) {
+  //       pages.push(current)
+  //       current = []
+  //       count = 0
+  //     }
 
-      if (w > wordsPerPg) {
-        // split long sentence into multiple chunks of wordsPerPg
-        const words = (s.en || '').split(/\s+/).filter(Boolean)
-        for (let k = 0; k < words.length; k += wordsPerPg) {
-          const chunkWords = words.slice(k, k + wordsPerPg)
-          const chunkText = chunkWords.join(' ')
-          const chunkSentence: Sentence = {
-            type: s.type,
-            en: chunkText,
-            jp: s.jp,
-            level: s.level,
-          }
-          pages.push([chunkSentence])
-        }
-        count = 0
-        continue
-      }
+  //     if (w > wordsPerPg) {
+  //       // split long sentence into multiple chunks of wordsPerPg
+  //       const words = (s.en || '').split(/\s+/).filter(Boolean)
+  //       for (let k = 0; k < words.length; k += wordsPerPg) {
+  //         const chunkWords = words.slice(k, k + wordsPerPg)
+  //         const chunkText = chunkWords.join(' ')
+  //         const chunkSentence: Sentence = {
+  //           type: s.type,
+  //           en: chunkText,
+  //           jp: s.jp,
+  //           level: s.level,
+  //         }
+  //         pages.push([chunkSentence])
+  //       }
+  //       count = 0
+  //       continue
+  //     }
 
-      current.push(s)
-      count = count + w
-    }
-    if (current.length) pages.push(current)
-    return pages
-  }
+  //     current.push(s)
+  //     count = count + w
+  //   }
+  //   if (current.length) pages.push(current)
+  //   return pages
+  // }
 
   $: blocks = buildBlocks(sentences)
   // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
@@ -231,12 +233,15 @@
 
 <main class="bookpage">
   <header class="topbar">
-    <button class="btn btn-ghost backBtn" type="button" aria-label="Go back" on:click={() => window.history.back()}>
+    <Button class="btn btn-ghost backBtn" type="button" variant="outline" aria-label="Go back" onclick={() => window.history.back()}>
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <polyline points="15 18 9 12 15 6"/>
       </svg>
-    </button>
+    </Button>
     <h2 class="title" title={headerTitle}>{headerTitle}</h2>
+    <div class="actions">
+      <Button class="btn btn-primary difficultBtn" type="button" aria-label="Mark difficult">難しい</Button>
+    </div>
   </header>
 
   {#if loading}
@@ -285,22 +290,40 @@
       </article>
     </section>
   {/if}
+
+  <nav class="pagination" aria-label="Page navigation">
+    <Button class="btn btn-outline" variant="outline" type="button" aria-label="Previous page">
+      <span class="icon"><ChevronLeft size={16} /></span>
+      <span class="btn-label">Previous</span>
+    </Button>
+    <span class="page-info">Page 1 of 10</span>
+  <Button class="btn btn-outline" variant="outline" type="button" aria-label="Next page">
+      <span class="btn-label">Next</span>
+      <span class="icon"><ChevronRight size={16} /></span>
+    </Button>
+  </nav>
 </main>
 
 <style>
   .bookpage { max-width: 800px; margin: 2rem auto; padding: 1rem; }
   .topbar {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: .5rem;
     margin-bottom: .75rem;
   }
-  .btn { height: 2rem; padding: 0 .5rem; border-radius: 8px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: .25rem; }
-  .btn-ghost { background: transparent; border-color: #e3e7ee; }
-  .btn-ghost:hover { background: #f6f7f9; }
-  .backBtn { width: 2rem; justify-content: center; }
+  .actions { display: flex; gap: .5rem; align-items: center; }
+  :global(.btn) { height: 2rem; padding: 0 .5rem; border-radius: 8px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: .25rem; }
+  :global(.btn-ghost) { background: transparent; border-color: #e3e7ee; }
+  :global(.btn-ghost):hover { background: #f6f7f9; }
+  :global(.backBtn) { width: 2rem; justify-content: center; }
   .title { font-size: 1.1rem; margin: 0; }
+  :global(.btn-primary) { background: #1f6feb; color: white; border-color: transparent; }
+  :global(.btn-primary):hover { background: #145fd1; }
+  :global(.pageBtn) svg { display: block; }
+  :global(.btn) .icon { display: inline-flex; align-items: center; line-height: 1; }
+  :global(.btn) .btn-label { display: inline-flex; align-items: center; }
 
   .error { color: #b00020; }
 
@@ -371,4 +394,13 @@
   /* Vertical placement modifiers */
   :global(.jp-bubble.pos-above) { bottom: auto; top: -2.2em; }
   :global(.jp-bubble.pos-below) { bottom: -2.2em; top: auto; }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  .pagination .page-info { color: #444; font-size: .95rem; }
 </style>
