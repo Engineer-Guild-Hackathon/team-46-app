@@ -42,7 +42,7 @@
   // Currently highlighted word index per sentence
   let wordHighlights: Record<number, number> = {}
   // Timestamp of last word selection (reference for potential suppression logic)
-  let lastWordSelectionAt = 0
+  let _lastWordSelectionAt = 0 // internal timestamp (not currently read)
   // Word tooltip visibility timers
   let wordTooltipVisible: Record<number, boolean> = {}
   const wordTooltipTimers = new Map<number, number>()
@@ -59,7 +59,7 @@
     sentences = []
   // clear transient word render cache (recomputed lazily)
     try {
-      let fromCache = false
+  let _fromCache = false
       let apiTextLength = 0
       // Compute telemetry: seconds since last completed page load
       const timeSec = lastLoadCompletedAt ? Math.max(0, Math.round((Date.now() - lastLoadCompletedAt) / 1000)) : null
@@ -72,8 +72,7 @@
         lastEnd = cached.endSentenceNo
         currentStart = start
         apiTextLength = sentences.length
-        fromCache = true
-        // eslint-disable-next-line no-console
+  _fromCache = true
         console.debug('[BookPage] Loaded page from cache:', { start, cachedCount: sentences.length, endSentenceNo: lastEnd })
       } else {
         // Build and log API params
@@ -87,7 +86,6 @@
           time: timeSec,
           rate: userRate,
         }
-        // eslint-disable-next-line no-console
         console.debug('[BookPage] getTextPage params ->', apiParams)
 
         // Request real text page from backend
@@ -95,7 +93,7 @@
         res = apiRes
         if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
           userRate = apiRes.rate
-          try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch {}
+          try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch { /* ignore persist */ }
         }
 
         // Map to local Sentence shape
@@ -112,7 +110,6 @@
   sentenceClickCountForRequest = 0
   wordClickCountForRequest = 0
 
-  // eslint-disable-next-line no-console
   console.debug('[BookPage] Initial sentences loaded:', sentences.length, 'sentences from', currentStart, 'to', lastEnd)
 
       // Wait for DOM to render so we can measure whether content overflows
@@ -131,7 +128,6 @@
         }
       }
       
-      // eslint-disable-next-line no-console
       console.debug('[BookPage] 🔍 Starting overflow detection after tick+RAF+tick...', {
         hasReaderElBound: !!readerEl,
         sentencesCount: sentences.length,
@@ -142,7 +138,6 @@
       })
       
       try {
-        // eslint-disable-next-line no-console
         console.debug('[BookPage] 🔍 Checking conditions:', {
           sentencesLength: sentences.length,
           hasReaderEl: !!readerEl,
@@ -156,7 +151,6 @@
           const articleReader = document.querySelector('article.reader')
           const bookTextSection = document.querySelector('.book-text')
           
-          // eslint-disable-next-line no-console
           console.debug('[BookPage] 🔍 DOM INSPECTION:', {
             'article.reader found': !!articleReader,
             '.reader found': !!allReaderClass.length,
@@ -186,18 +180,15 @@
               readerEl = allArticles[0] as HTMLElement | null
             }
             
-            // eslint-disable-next-line no-console
             console.debug('[BookPage] 🔍 Final readerEl found via fallback:', !!readerEl, readerEl?.className)
           }
           
           if (readerEl) {
-            // eslint-disable-next-line no-console
             console.debug('[BookPage] ✅ Proceeding with overflow detection')
             
             const readerRect = readerEl.getBoundingClientRect()
             const readerStyles = window.getComputedStyle(readerEl)
             
-            // eslint-disable-next-line no-console
             console.debug('[BookPage] 🔍 READER CONTAINER:', {
               maxHeight: readerStyles.maxHeight,
               actualHeight: Math.round(readerRect.height),
@@ -227,7 +218,6 @@
                     const containerBottom = readerRect.bottom
                     const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
                     
-                    // eslint-disable-next-line no-console
                     console.debug(`[BookPage] 📏 Sentence ${sentenceIndex} (elRef ${elementIndex}):`, {
                       text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
                       sentenceBottom: Math.round(sentenceBottom),
@@ -240,7 +230,6 @@
                     if (overflows && firstCutOffIndex === -1) {
                       firstCutOffIndex = sentenceIndex
                       cutOffFound = true
-                      // eslint-disable-next-line no-console
                       console.debug(`[BookPage] 🚨 BOTTOM OVERFLOW at sentence ${sentenceIndex} (elRef ${elementIndex}):`, {
                         sentenceNo: sentences[sentenceIndex].sentenceNo,
                         text: sentences[sentenceIndex].en,
@@ -249,7 +238,6 @@
                       break
                     }
                   } else {
-                    // eslint-disable-next-line no-console
                     console.debug(`[BookPage] ⚠️ No element ref for sentence ${sentenceIndex} (elRef ${elementIndex})`)
                   }
                   
@@ -267,7 +255,6 @@
                   const containerBottom = readerRect.bottom
                   const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
                   
-                  // eslint-disable-next-line no-console
                   console.debug(`[BookPage] 📏 Subtitle ${sentenceIndex} (elRef ${elementIndex}):`, {
                     text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
                     sentenceBottom: Math.round(sentenceBottom),
@@ -280,7 +267,6 @@
                   if (overflows && firstCutOffIndex === -1) {
                     firstCutOffIndex = sentenceIndex
                     cutOffFound = true
-                    // eslint-disable-next-line no-console
                     console.debug(`[BookPage] 🚨 BOTTOM OVERFLOW at subtitle ${sentenceIndex} (elRef ${elementIndex}):`, {
                       sentenceNo: sentences[sentenceIndex].sentenceNo,
                       text: sentences[sentenceIndex].en,
@@ -289,7 +275,6 @@
                     break
                   }
                 } else {
-                  // eslint-disable-next-line no-console
                   console.debug(`[BookPage] ⚠️ No element ref for subtitle ${sentenceIndex} (elRef ${elementIndex})`)
                 }
                 
@@ -309,7 +294,6 @@
               const heldSentenceNo = heldSentences[0].sentenceNo ?? firstCutOffIndex
               canNext = true
               
-              // eslint-disable-next-line no-console
               console.debug('[BookPage] ✂️ TRIMMED OVERFLOW SENTENCES:', {
                 originalCount: originalLength,
                 keptCount: sentences.length,
@@ -324,22 +308,18 @@
             } else {
               // No cut-off detected
               canNext = lastEnd + 1 > start && sentences.length > 0
-              // eslint-disable-next-line no-console
               console.debug('[BookPage] ✅ No overflow detected, all content fits')
             }
           } else {
-            // eslint-disable-next-line no-console
             console.debug('[BookPage] ❌ Cannot detect overflow: no reader element found')
             canNext = lastEnd + 1 > start && sentences.length > 0
           }
         } else {
-          // eslint-disable-next-line no-console
           console.debug('[BookPage] ❌ No sentences to check')
           canNext = false
         }
       } catch (me: unknown) {
         // ignore measurement errors — fall back to previous canNext heuristic
-        // eslint-disable-next-line no-console
         console.warn('[BookPage] measurement error', me)
         canNext = lastEnd + 1 > start && apiTextLength > 0
       }
@@ -418,7 +398,7 @@
     wordHighlights[i] = idx
     reassignWordHighlights()
     wordClickCountForRequest++
-    lastWordSelectionAt = Date.now()
+  _lastWordSelectionAt = Date.now()
     console.debug('[BookPage] word selected (contextmenu)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
   // Show timed tooltip for selected word
   showWordTooltip(i)
@@ -443,7 +423,7 @@
     wordHighlights[i] = idx
     reassignWordHighlights()
     wordClickCountForRequest++
-    lastWordSelectionAt = Date.now()
+  _lastWordSelectionAt = Date.now()
     console.debug('[BookPage] word selected (mousedown)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
     showWordTooltip(i)
   }
@@ -472,15 +452,14 @@
           wordHighlights[i] = idx
           reassignWordHighlights()
           wordClickCountForRequest++
-          lastWordSelectionAt = Date.now()
+          _lastWordSelectionAt = Date.now()
         }
         // prevent upcoming click from toggling sentence
         suppressClickForSentence = i
         lastLongPressAt = Date.now()
         touchPresses[i].triggered = true
         // Suppress native selection
-        try { window.getSelection()?.removeAllRanges() } catch {}
-        // eslint-disable-next-line no-console
+  try { window.getSelection()?.removeAllRanges() } catch { /* ignore selection */ }
         console.debug('[BookPage] touch long-press word highlight', { sentenceIndex: i, wordIndex: idx })
   showWordTooltip(i)
       }, LONG_PRESS_TOUCH_MS)
@@ -508,7 +487,7 @@
     delete touchPresses[i]
     if (wasTriggered) {
       // prevent any stray selection
-      try { window.getSelection()?.removeAllRanges() } catch {}
+  try { window.getSelection()?.removeAllRanges() } catch { /* ignore selection */ }
       e.preventDefault?.()
     }
   }
@@ -547,7 +526,6 @@
 
   function reassignWordHighlights() {
     // trigger Svelte reactivity for object mutation
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   wordHighlights = { ...wordHighlights }
   console.debug('[BookPage] wordHighlights state (tooltip applied if index matches)', wordHighlights)
   }
@@ -580,7 +558,6 @@
     if (existing) window.clearTimeout(existing)
   wordTooltipVisible[i] = true
   // force reactive update
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   wordTooltipVisible = { ...wordTooltipVisible }
     // schedule hide
     const id = window.setTimeout(() => hideWordTooltip(i), WORD_TOOLTIP_MS)
@@ -590,7 +567,6 @@
   function hideWordTooltip(i: number) {
   delete wordTooltipVisible[i]
   // force reactive update
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   wordTooltipVisible = { ...wordTooltipVisible }
     const existing = wordTooltipTimers.get(i)
     if (existing) window.clearTimeout(existing)
@@ -601,7 +577,7 @@
     if (loading) return
     const prevRate = userRate ?? 0
     userRate = Math.max(0, prevRate - 300)
-    try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch {}
+  try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch { /* ignore persist */ }
     console.debug('[BookPage] 難しい pressed: lowering rate', { previous: prevRate, new: userRate })
   // Log difficult button press with previous rate (state before adjustment)
   void logDifficultBtn({ userId: 'anonymous', rate: prevRate }).catch(() => {})
@@ -684,7 +660,7 @@
         const num = Number(stored)
         if (!Number.isNaN(num)) userRate = num
       }
-    } catch {}
+  } catch { /* ignore localStorage */ }
     // Ensure the .reader element exists in the DOM so we can measure it.
     await tick()
     await new Promise((r) => requestAnimationFrame(() => r(undefined)))
@@ -696,25 +672,21 @@
     // compute initial words-per-page based on reader element (or body fallback)
     if (readerEl) {
       wordsPerPage = computeWordsPerPage(readerEl) || 0
-      // eslint-disable-next-line no-console
       console.debug('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
       // observe for container changes and update wordsPerPage (does not auto-reload)
       const stop = observeWordsPerPage(readerEl, (n) => {
         wordsPerPage = n || 0
-        // eslint-disable-next-line no-console
         console.debug('[wpp] wordsPerPage updated=', wordsPerPage)
       })
       onDestroy(() => stop && stop())
     } else {
       wordsPerPage = computeWordsPerPage(document.body) || 0
-      // eslint-disable-next-line no-console
       console.debug('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
     }
 
     // derive a conservative charCount from wordsPerPage and request the page
     const estimated = Math.max(80, Math.min(4000, Math.floor(wordsPerPage * AVG_CHARS_PER_WORD)))
     charCountForRequest = estimated
-    // eslint-disable-next-line no-console
     console.debug('[BookPage] estimated charCount from wordsPerPage=', estimated)
 
     // load first page using estimated charCount
@@ -798,7 +770,7 @@
       const safe = tok.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       const cls = idx === highlightIdx ? 'word word-highlight' : 'word'
   if (idx === highlightIdx && tooltipVisible) {
-        return `<span class="${cls}" data-wi="${idx}">${safe}<span class=\"word-tooltip\" aria-label=\"Placeholder translation\">Translation unavailable</span></span>`
+  return `<span class="${cls}" data-wi="${idx}">${safe}<span class="word-tooltip" aria-label="Placeholder translation">Translation unavailable</span></span>`
       }
       return `<span class="${cls}" data-wi="${idx}">${safe}</span>`
     }).join('')

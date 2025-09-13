@@ -8,8 +8,8 @@ import { getJson } from './client'
 // Extend endpoints object locally (non-breaking if properties already added elsewhere)
 // Using relative paths so the same origin serving the frontend can proxy them.
 export const LOG_ENDPOINTS = {
-  openJapanese: '/api/log/openJapanese',
-  difficultBtn: '/api/difficultBtn',
+  openJapanese: 'https://us-central1-flexread-egh.cloudfunctions.net/log/openJapanese',
+  difficultBtn: 'https://us-central1-flexread-egh.cloudfunctions.net/difficultBtn',
 } as const
 
 export interface LogResult {
