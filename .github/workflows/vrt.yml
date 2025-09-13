@@ -1,0 +1,50 @@
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Lost Pixel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x # Use LTS to avoid npm optional dependency bug affecting Rollup native binary on Node 22
+          cache: 'npm'
+      - name: (Workaround) Verify npm version
+        run: npm --version
+
+      - name: Install dependencies
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install
+          else
+            npm ci || (echo 'npm ci failed, retrying with clean install' && rm -rf node_modules package-lock.json && npm install)
+          fi
+
+      - name: Build app
+        run: npm run build
+
+      - name: Start preview server (in background)
+        run: |
+          # Start Vite preview on 0.0.0.0:3000 so it is reachable from the Lost Pixel Docker container via 172.17.0.1
+          npm run preview -- --host 0.0.0.0 --port 3000 &
+          echo $! > preview.pid
+
+      - name: Wait for preview to be ready
+        run: |
+          for i in {1..60}; do
+            if curl -sSf http://172.17.0.1:3000 >/dev/null; then
+              echo "Preview is up"; exit 0;
+            fi
+            echo "Waiting for preview... ($i)"; sleep 2;
+          done
+          echo "Preview did not start in time"; exit 1
+
+      - name: Lost Pixel
+        uses: lost-pixel/lost-pixel@v3.16.0
+        env:
+          LOST_PIXEL_API_KEY: ${{ secrets.LOST_PIXEL_API_KEY }}
