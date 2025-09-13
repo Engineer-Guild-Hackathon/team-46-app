@@ -63,3 +63,36 @@ const fetchMock = vi.fn(async (input: string | URL) => {
   return new Response('Not Mocked', { status: 404 })
 })
 globalThis.fetch = fetchMock as unknown as typeof fetch
+
+// Basic ResizeObserver polyfill for jsdom (only invokes callback once per observe)
+if (!(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver) {
+  // Minimal ResizeObserver callback + entry types for test environment
+  interface _ROEntry {
+    target: Element
+    contentRect: DOMRect
+  }
+  type _ROCB = (entries: _ROEntry[], observer: RO) => void
+  class RO {
+    private _cb: _ROCB
+    constructor(cb: _ROCB) {
+      this._cb = cb
+    }
+    observe(target: Element) {
+      setTimeout(() => {
+        const entry: _ROEntry[] = [{ target, contentRect: target.getBoundingClientRect() }]
+        try {
+          this._cb(entry, this)
+        } catch {
+          /* ignore callback errors */
+        }
+      }, 0)
+    }
+    unobserve() {
+      /* noop */
+    }
+    disconnect() {
+      /* noop */
+    }
+  }
+  ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = RO as unknown
+}
