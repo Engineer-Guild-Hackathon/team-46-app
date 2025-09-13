@@ -31,6 +31,47 @@
   - 次ページをプリフェッチ
   - ユーザー内部レベルに応じて表示内容調整
 
+## API: テキストページ取得 (要件)
+
+パラメータ
+
+| 名前               | 必須 | 説明                                       | デフォルト値 |
+| ------------------ | ---- | ------------------------------------------ | ------------ |
+| bookId             | ○    | 対象の本のID                               | -            |
+| startSentenceNo    |      | 開始の sentenceNo                          | 0            |
+| userId             |      | ユーザーID                                 | "anonymous"  |
+| charCount          |      | 要求文字数（最大）                         | 800          |
+| wordClickCount     |      | クリックして単語を表示させた回数           | null         |
+| sentenceClickCount |      | クリックして日本語訳を表示させた回数       | null         |
+| time               |      | 前回のロードから今回のリクエストまでの秒数 | null         |
+| rate               |      | ユーザーの推定レート                       | null         |
+
+レスポンス形式
+
+```json
+{
+    "rate":1800,
+    "endSentenceNo":121,
+    "text":[
+        {
+            "type":"text",
+            "sentenceNo":12,
+            "en":"Alice said,\"I feel strange. I am getting very small\" ",
+            "jp":"アリスは「体が小さくなっていくよう！」と言いました"
+        },
+        ...
+    ]
+}
+```
+
+振る舞い
+
+- `startSentenceNo` から始まる「1ページ分」の文のリストを返します。
+- リスト長さは各 `en` と `jp` を含めた合計文字数が `charCount` に達しない最大の長さになります（つまり合計が charCount を超えない最大の文数を返す）。
+- 各要素の `type` は `text` または `subtitle` を取り得ます。
+
+備考: フロントエンドでは `src/lib/api/text.ts` の `getTextPage` を利用してこのエンドポイントへ GET リクエストを送ります。
+
 ## 開発方針
 
 - **フロントエンド:** Svelte + TypeScript + shadcn/ui

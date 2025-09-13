@@ -51,7 +51,6 @@ export function computeWordsPerPage(el: HTMLElement | null): number {
     const wordsPerLine = Math.max(1, Math.floor(containerWidth / Math.max(1, wordWidth)))
     const linesPerPage = Math.max(1, Math.floor(containerHeight / Math.max(1, lineHeight)))
     const result = wordsPerLine * linesPerPage
-    // eslint-disable-next-line no-console
     console.debug('[wpp] computeFromDims', {
       containerWidth,
       containerHeight,
@@ -104,7 +103,6 @@ export function computeWordsPerPage(el: HTMLElement | null): number {
     }
 
     document.body.removeChild(probe)
-    // eslint-disable-next-line no-console
     console.debug('[wpp] probe measured words-per-page (words) =', best)
     return Math.max(1, best)
   }
