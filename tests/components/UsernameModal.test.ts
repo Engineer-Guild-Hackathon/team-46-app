@@ -5,7 +5,7 @@ import { user } from '$lib/stores/user'
 
 // Helper to get current user store value
 function getUser() {
-  let val: any
+  let val: { userId: string | null; username: string | null } = { userId: null, username: null }
   const unsub = user.subscribe((v) => (val = v))
   unsub()
   return val

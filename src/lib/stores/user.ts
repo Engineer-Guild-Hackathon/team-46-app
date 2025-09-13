@@ -24,7 +24,7 @@ export const user = writable<UserState>(loadInitial())
 function generateUUID(): string {
   // Prefer native
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return (crypto as any).randomUUID()
+    return (crypto as Crypto & { randomUUID: () => string }).randomUUID()
   }
   // Fallback simple RFC4122-ish
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {

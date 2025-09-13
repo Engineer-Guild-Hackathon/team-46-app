@@ -1,4 +1,6 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte'
+// Type-only import for fetch signature
+import type { RequestInfo } from 'node-fetch'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import App from '../../src/App.svelte'
 
@@ -6,7 +8,9 @@ function resetStorage() {
   try {
     localStorage.removeItem('userId')
     localStorage.removeItem('username')
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 
 describe('App user modal integration', () => {
@@ -18,9 +22,9 @@ describe('App user modal integration', () => {
       if (url.includes('/books')) {
         return Promise.resolve(
           new Response(JSON.stringify({ books: [], total: 0 }), { status: 200 })
-        ) as any
+        ) as unknown as Promise<Response>
       }
-      return Promise.resolve(new Response('{}', { status: 200 })) as any
+      return Promise.resolve(new Response('{}', { status: 200 })) as unknown as Promise<Response>
     })
   })
 

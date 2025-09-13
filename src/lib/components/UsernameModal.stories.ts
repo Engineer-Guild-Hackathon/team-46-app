@@ -1,3 +1,5 @@
+/* Using renderer types for Svelte; rule disabled for this line intentionally. */
+// eslint-disable-next-line storybook/no-renderer-packages
 import type { Meta, StoryObj } from '@storybook/svelte'
 import { within, userEvent } from '@storybook/testing-library'
 import UsernameModal from './UsernameModal.svelte'
