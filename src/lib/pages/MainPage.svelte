@@ -107,7 +107,7 @@
 </script>
 
 <header class="topbar">
-  <h1 class="brand">App</h1>
+  <h1 class="brand">PoC Team-46</h1>
   <nav class="nav">
     <button class="login" title="Login">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="vertical-align:middle;">

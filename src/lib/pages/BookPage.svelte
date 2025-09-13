@@ -21,7 +21,8 @@
   let bubbleVisible = new Set<number>()
   const bubbleTimers = new Map<number, number>()
   const elRefs: Record<number, HTMLElement | null> = {}
-  const AUTO_HIDE_MS = 2600 // auto-hide translation after a short delay
+  const AUTO_HIDE_MS = 5000 // sentence bubble duration (increased)
+  const WORD_TOOLTIP_MS = 5000 // match sentence duration for placeholder
 
   let readerEl: HTMLElement | null = null
   let wordsPerPage = 0
@@ -41,6 +42,9 @@
   let wordHighlights: Record<number, number> = {}
   // Timestamp of last word selection (reference for potential suppression logic)
   let lastWordSelectionAt = 0
+  // Word tooltip visibility timers
+  let wordTooltipVisible: Record<number, boolean> = {}
+  const wordTooltipTimers = new Map<number, number>()
   // Touch long-press support (mobile simulate right-click)
   const touchPresses: Record<number, { timer: number; startX: number; startY: number; triggered: boolean }> = {}
   const LONG_PRESS_TOUCH_MS = 520
@@ -356,6 +360,8 @@
     // push current start to history so we can go back
     prevStarts.push(currentStart)
     const nextStart = lastEnd + 1
+  // Clear current selections/highlights before navigating
+  clearSelections()
   // Always fetch next page from API (do not use cache)
   await loadPage(nextStart, undefined, false)
   }
@@ -363,6 +369,8 @@
   async function previousPage() {
     if (loading || prevStarts.length === 0) return
     const prev = prevStarts.pop() as number
+  // Clear current selections/highlights before navigating
+  clearSelections()
   // Prefer cache for previous pages
   await loadPage(prev, undefined, true)
   }
@@ -404,6 +412,8 @@
     wordClickCountForRequest++
     lastWordSelectionAt = Date.now()
     console.debug('[BookPage] word selected (contextmenu)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
+  // Show timed tooltip for selected word
+  showWordTooltip(i)
   }
 
   // Fallback: capture right-button mousedown early (some browsers may not fire contextmenu quickly on mobile emulation)
@@ -419,6 +429,7 @@
       delete wordHighlights[i]
       reassignWordHighlights()
       console.debug('[BookPage] word highlight removed (mousedown)', { sentenceIndex: i, wordIndex: idx })
+      hideWordTooltip(i)
       return
     }
     wordHighlights[i] = idx
@@ -426,6 +437,7 @@
     wordClickCountForRequest++
     lastWordSelectionAt = Date.now()
     console.debug('[BookPage] word selected (mousedown)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
+    showWordTooltip(i)
   }
 
   // Helper to get word index from pointer/mouse event
@@ -462,6 +474,7 @@
         try { window.getSelection()?.removeAllRanges() } catch {}
         // eslint-disable-next-line no-console
         console.debug('[BookPage] touch long-press word highlight', { sentenceIndex: i, wordIndex: idx })
+  showWordTooltip(i)
       }, LONG_PRESS_TOUCH_MS)
     }
   }
@@ -528,7 +541,62 @@
     // trigger Svelte reactivity for object mutation
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   wordHighlights = { ...wordHighlights }
-  console.debug('[BookPage] wordHighlights state', wordHighlights)
+  console.debug('[BookPage] wordHighlights state (tooltip applied if index matches)', wordHighlights)
+  }
+
+  function clearSelections() {
+    // Sentences
+    selected = new Set()
+    bubbleVisible = new Set()
+    // Clear sentence bubble timers
+    bubbleTimers.forEach(id => window.clearTimeout(id))
+    bubbleTimers.clear()
+    // Word highlights
+    wordHighlights = {}
+    // Word tooltips & timers
+    wordTooltipTimers.forEach(id => window.clearTimeout(id))
+    wordTooltipTimers.clear()
+    wordTooltipVisible = {}
+    // Touch long-press state
+    Object.values(touchPresses).forEach(p => p.timer && window.clearTimeout(p.timer))
+    for (const k in touchPresses) delete touchPresses[k]
+    // Force reactivity for anything mutated
+    reassignWordHighlights()
+    wordTooltipVisible = { ...wordTooltipVisible }
+    console.debug('[BookPage] selections cleared on page change')
+  }
+
+  function showWordTooltip(i: number) {
+    // clear existing
+    const existing = wordTooltipTimers.get(i)
+    if (existing) window.clearTimeout(existing)
+  wordTooltipVisible[i] = true
+  // force reactive update
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  wordTooltipVisible = { ...wordTooltipVisible }
+    // schedule hide
+    const id = window.setTimeout(() => hideWordTooltip(i), WORD_TOOLTIP_MS)
+    wordTooltipTimers.set(i, id)
+  }
+
+  function hideWordTooltip(i: number) {
+  delete wordTooltipVisible[i]
+  // force reactive update
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  wordTooltipVisible = { ...wordTooltipVisible }
+    const existing = wordTooltipTimers.get(i)
+    if (existing) window.clearTimeout(existing)
+    wordTooltipTimers.delete(i)
+  }
+
+  async function handleDifficult() {
+    if (loading) return
+    const prevRate = userRate ?? 0
+    userRate = Math.max(0, prevRate - 300)
+    try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch {}
+    console.debug('[BookPage] 難しい pressed: lowering rate', { previous: prevRate, new: userRate })
+    // Re-load current page with same start & charCount using updated rate (force fresh fetch)
+    await loadPage(currentStart, charCountForRequest, false)
   }
 
   function showBubble(i: number) {
@@ -709,16 +777,19 @@
 
   $: blocks = buildBlocks(sentences)
   // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
-  $: headerTitle = (sentences.find((s) => s.type === 'subtitle')?.en?.replace(/\r?\n/g, ' ')) ?? `Book ${bookId}`
+  $: headerTitle = "CHAPTER I. Down the Rabbit-Hole";
   $: rateDisplay = userRate !== null ? userRate : '—'
 
-  function renderSentenceHTML(i: number, s: Sentence, highlightIdx?: number): string {
+  function renderSentenceHTML(i: number, s: Sentence, highlightIdx?: number, tooltipVisible?: boolean): string {
     const text = formatSentence(s.en)
     const tokens = text.split(/(\s+)/)
     return tokens.map((tok, idx) => {
       if (/^\s*$/.test(tok)) return tok
       const safe = tok.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       const cls = idx === highlightIdx ? 'word word-highlight' : 'word'
+  if (idx === highlightIdx && tooltipVisible) {
+        return `<span class="${cls}" data-wi="${idx}">${safe}<span class=\"word-tooltip\" aria-label=\"Placeholder translation\">ヒナギクの花冠 / 連鎖的なつながり</span></span>`
+      }
       return `<span class="${cls}" data-wi="${idx}">${safe}</span>`
     }).join('')
   }
@@ -737,7 +808,7 @@
     </Button>
     <h2 class="title" title={headerTitle}>{headerTitle}</h2>
     <div class="actions">
-      <Button class="btn btn-primary difficultBtn" type="button" aria-label="Mark difficult">難しい</Button>
+  <button class="btn btn-primary difficultBtn" type="button" aria-label="Mark difficult" disabled={loading} on:click={handleDifficult}>難しい</button>
     </div>
   </header>
 
@@ -779,7 +850,7 @@
                     }}
                     aria-pressed={selected.has(b.idxStart + j)}
                   >
-                    {@html renderSentenceHTML(b.idxStart + j, s, wordHighlights[b.idxStart + j])}
+                    {@html renderSentenceHTML(b.idxStart + j, s, wordHighlights[b.idxStart + j], wordTooltipVisible[b.idxStart + j])}
                     {#if bubbleVisible.has(b.idxStart + j)}
                       <span class="jp-bubble" aria-label="Japanese translation">{s.jp}</span>
                     {/if}
@@ -922,5 +993,22 @@
     font-weight: 600;
     text-decoration: underline 2px solid #0a56ad;
     text-underline-offset: 2px;
+  }
+  :global(.word-highlight) { position: relative; }
+  :global(.word-tooltip) {
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    transform: translate(-50%, -4px);
+    background: #232f3e;
+    color: #fff;
+    font-size: .65rem;
+    line-height: 1.2;
+    padding: 2px 4px;
+    border-radius: 4px;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,.15);
+    pointer-events: none;
+    z-index: 2;
   }
 </style>
