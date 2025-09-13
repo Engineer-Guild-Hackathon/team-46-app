@@ -53,6 +53,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "lost-pixel": "^3.22.0"
+    "lost-pixel": "^3.22.0",
+    "vercel": "^48.0.0"
   }
 }
