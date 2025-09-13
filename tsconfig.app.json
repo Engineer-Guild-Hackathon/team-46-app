@@ -18,6 +18,7 @@
     "moduleDetection": "force",
     "baseUrl": ".",
     "paths": {
+      "$lib": ["src/lib"],
       "$lib/*": ["src/lib/*"]
     },
   "types": ["svelte", "vitest"]
