@@ -79,7 +79,7 @@
         const apiParams = {
           bookId,
           startSentenceNo: start,
-          userId: 'anonymous',
+          userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
           charCount: charCountParam ?? charCountForRequest,
           wordClickCount: wordClickCountForRequest || null,
           sentenceClickCount: sentenceClickCountForRequest || null,
@@ -366,7 +366,7 @@
       const s = sentences[i]
       const sentenceNo = s?.sentenceNo ?? i
       // Fire-and-forget; swallow errors to avoid test noise / UI disruption
-      void logOpenJapanese({ userId: 'anonymous', rate: userRate ?? 0, sentenceNo }).catch(() => {})
+  void logOpenJapanese({ userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous', rate: userRate ?? 0, sentenceNo }).catch(() => {})
     }
     showBubble(i)
   }
@@ -580,7 +580,7 @@
   try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch { /* ignore persist */ }
     console.debug('[BookPage] 難しい pressed: lowering rate', { previous: prevRate, new: userRate })
   // Log difficult button press with previous rate (state before adjustment)
-  void logDifficultBtn({ userId: 'anonymous', rate: prevRate }).catch(() => {})
+  void logDifficultBtn({ userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous', rate: prevRate }).catch(() => {})
     // Re-load current page with same start & charCount using updated rate (force fresh fetch)
     await loadPage(currentStart, charCountForRequest, false)
   }
