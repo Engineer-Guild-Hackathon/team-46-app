@@ -36,6 +36,8 @@
   const pageCache = new Map<number, { sentences: Sentence[]; endSentenceNo: number }>()
   // Word-level telemetry (long-press selects a word)
   let wordClickCountForRequest = 0
+  // First load flag: initial request must send null counts (backend interprets as 'no prior page')
+  let firstLoad = true
   // Persisted user reading rate (backend provided) stored per book
   let userRate: number | null = null
   const rateStorageKey = (id: string) => `bookRate:${id}`
@@ -79,10 +81,10 @@
         const apiParams = {
           bookId,
           startSentenceNo: start,
-          userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
+            userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
           charCount: charCountParam ?? charCountForRequest,
-          wordClickCount: wordClickCountForRequest || null,
-          sentenceClickCount: sentenceClickCountForRequest || null,
+          wordClickCount: firstLoad ? null : wordClickCountForRequest,
+          sentenceClickCount: firstLoad ? null : sentenceClickCountForRequest,
           time: timeSec,
           rate: userRate,
         }
@@ -109,6 +111,7 @@
   // Reset counters for the next request (we've just reported them)
   sentenceClickCountForRequest = 0
   wordClickCountForRequest = 0
+  if (firstLoad) firstLoad = false
 
   console.debug('[BookPage] Initial sentences loaded:', sentences.length, 'sentences from', currentStart, 'to', lastEnd)
 
@@ -333,6 +336,14 @@
       if (sentences.length > 0) {
         pageCache.set(currentStart, { sentences: sentences.slice(), endSentenceNo: lastEnd })
       }
+    }
+  }
+
+  // Test hook: only defined in test environment to allow forcing a second load without user interaction.
+  if (typeof window !== 'undefined' && (window as any).__VITEST__) {
+    ;(window as any).__bookPageForceNext = () => {
+      // simulate advancing by lastEnd to request next chunk
+      void loadPage(lastEnd)
     }
   }
 
