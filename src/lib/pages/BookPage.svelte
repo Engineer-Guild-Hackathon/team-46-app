@@ -6,6 +6,7 @@
   import { getTextPage } from '$lib/api/text'
   import { ChevronLeft, ChevronRight } from '@lucide/svelte'
     import Button from '$lib/components/ui/button/button.svelte'
+  import { logOpenJapanese, logDifficultBtn } from '$lib/api/logging'
 
   export let bookId: string
 
@@ -380,6 +381,13 @@
     if (isNew) selected.add(i)
     selected = new Set(selected)
     sentenceClickCountForRequest++
+    // Fire sentence translation open log (first time only)
+    if (isNew) {
+      const s = sentences[i]
+      const sentenceNo = s?.sentenceNo ?? i
+      // Fire-and-forget; swallow errors to avoid test noise / UI disruption
+      void logOpenJapanese({ userId: 'anonymous', rate: userRate ?? 0, sentenceNo }).catch(() => {})
+    }
     showBubble(i)
   }
 
@@ -595,6 +603,8 @@
     userRate = Math.max(0, prevRate - 300)
     try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch {}
     console.debug('[BookPage] 難しい pressed: lowering rate', { previous: prevRate, new: userRate })
+  // Log difficult button press with previous rate (state before adjustment)
+  void logDifficultBtn({ userId: 'anonymous', rate: prevRate }).catch(() => {})
     // Re-load current page with same start & charCount using updated rate (force fresh fetch)
     await loadPage(currentStart, charCountForRequest, false)
   }
@@ -788,7 +798,7 @@
       const safe = tok.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       const cls = idx === highlightIdx ? 'word word-highlight' : 'word'
   if (idx === highlightIdx && tooltipVisible) {
-        return `<span class="${cls}" data-wi="${idx}">${safe}<span class=\"word-tooltip\" aria-label=\"Placeholder translation\">ヒナギクの花冠 / 連鎖的なつながり</span></span>`
+        return `<span class="${cls}" data-wi="${idx}">${safe}<span class=\"word-tooltip\" aria-label=\"Placeholder translation\">Translation unavailable</span></span>`
       }
       return `<span class="${cls}" data-wi="${idx}">${safe}</span>`
     }).join('')
