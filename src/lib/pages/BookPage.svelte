@@ -6,7 +6,7 @@
   import { getTextPage } from '$lib/api/text'
   import { ChevronLeft, ChevronRight } from '@lucide/svelte'
     import Button from '$lib/components/ui/button/button.svelte'
-  import { logOpenJapanese, logDifficultBtn } from '$lib/api/logging'
+  import { logOpenJapanese, logDifficultBtn, logOpenWord } from '$lib/api/logging'
 
   export let bookId: string
 
@@ -377,9 +377,13 @@
     // Fire sentence translation open log (first time only)
     if (isNew) {
       const s = sentences[i]
-      const sentenceNo = s?.sentenceNo ?? i
+  const _sentenceNo = s?.sentenceNo ?? i // currently unused; kept for potential future feedback extension
       // Fire-and-forget; swallow errors to avoid test noise / UI disruption
-  void logOpenJapanese({ userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous', rate: userRate ?? 0, sentenceNo }).catch(() => {})
+      void logOpenJapanese(
+        (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
+        userRate ?? 0,
+        s?.sentenceNo ?? i
+      ).catch(() => {})
     }
     showBubble(i)
   }
@@ -408,7 +412,14 @@
     reassignWordHighlights()
     wordClickCountForRequest++
     _lastWordSelectionAt = Date.now()
-    showWordTooltip(i, idx)
+    try {
+      void logOpenWord(
+        (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
+        userRate ?? 0,
+        idx
+      )
+    } catch { /* ignore word log */ }
+  showWordTooltip(i, idx)
   }
 
   // CONTEXT MENU (right-click) -> toggle sentence translation bubble (flipped)
@@ -570,7 +581,7 @@
   try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch { /* ignore persist */ }
     console.debug('[BookPage] 難しい pressed: lowering rate', { previous: prevRate, new: userRate })
   // Log difficult button press with previous rate (state before adjustment)
-  void logDifficultBtn({ userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous', rate: prevRate }).catch(() => {})
+  void logDifficultBtn((typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous', prevRate).catch(() => {})
     // Re-load current page with same start & charCount using updated rate (force fresh fetch)
     await loadPage(currentStart, charCountForRequest, false)
   }
