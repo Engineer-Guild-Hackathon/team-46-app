@@ -21,9 +21,8 @@
   let canNext = false
   let selected = new Set<number>()
   let bubbleVisible = new Set<number>()
-  const bubbleTimers = new Map<number, number>()
   const elRefs: Record<number, HTMLElement | null> = {}
-  const AUTO_HIDE_MS = 5000 // sentence bubble duration (increased)
+  // Removed popup auto-hide: translations stay until user toggles
   const WORD_TOOLTIP_MS = 5000 // match sentence duration for placeholder
 
   let readerEl: HTMLElement | null = null
@@ -337,12 +336,8 @@
       error = e instanceof Error ? e.message : 'Failed to load text'
     } finally {
       loading = false
-  // Mark completion time to measure delay until next request
-  lastLoadCompletedAt = Date.now()
-      // Cache the displayed page for back navigation
-      if (sentences.length > 0) {
-        pageCache.set(currentStart, { sentences: sentences.slice(), endSentenceNo: lastEnd })
-      }
+      lastLoadCompletedAt = Date.now()
+      if (sentences.length > 0) pageCache.set(currentStart, { sentences: sentences.slice(), endSentenceNo: lastEnd })
     }
   }
 
@@ -542,9 +537,7 @@
     // Sentences
     selected = new Set()
     bubbleVisible = new Set()
-    // Clear sentence bubble timers
-    bubbleTimers.forEach(id => window.clearTimeout(id))
-    bubbleTimers.clear()
+  // No sentence bubble timers anymore (persistent translations)
     // Word highlights
   wordHighlights = {}
   wordTooltipWordIndex = {}
@@ -599,68 +592,11 @@
   function showBubble(i: number) {
     bubbleVisible.add(i)
     bubbleVisible = new Set(bubbleVisible)
-    void positionBubbleNextTick(i)
-    // reset auto-hide timer
-    const prev = bubbleTimers.get(i)
-    if (prev) window.clearTimeout(prev)
-    const id = window.setTimeout(() => hideBubble(i), AUTO_HIDE_MS)
-    bubbleTimers.set(i, id)
   }
 
   function hideBubble(i: number) {
     bubbleVisible.delete(i)
     bubbleVisible = new Set(bubbleVisible)
-    const prev = bubbleTimers.get(i)
-    if (prev) window.clearTimeout(prev)
-    bubbleTimers.delete(i)
-  }
-
-
-  async function positionBubbleNextTick(i: number) {
-    await tick()
-    adjustBubblePosition(i)
-  }
-
-  function adjustBubblePosition(_i: number) {
-    const host = elRefs[_i]
-    if (!host) return
-    const bubble = host.querySelector('.jp-bubble') as HTMLElement | null
-    if (!bubble) return
-    // Reset modifiers
-    bubble.classList.remove('align-left', 'align-right', 'align-center', 'pos-above', 'pos-below')
-    bubble.style.setProperty('--shiftX', '0px')
-
-    const margin = 8
-    let rect = bubble.getBoundingClientRect()
-    const vw = window.innerWidth
-
-    // Prefer above by default, fallback below if needed
-    // Temporarily mark as above to measure
-    bubble.classList.add('pos-above')
-    rect = bubble.getBoundingClientRect()
-    if (rect.top < margin) {
-      bubble.classList.remove('pos-above')
-      bubble.classList.add('pos-below')
-      rect = bubble.getBoundingClientRect()
-    }
-
-    // Horizontal alignment
-    if (rect.left < margin) {
-      bubble.classList.add('align-left')
-    } else if (rect.right > vw - margin) {
-      bubble.classList.add('align-right')
-    } else {
-      bubble.classList.add('align-center')
-    }
-
-    // Re-measure and clamp to viewport horizontally with a pixel shift
-    rect = bubble.getBoundingClientRect()
-    const overflowLeft = Math.max(0, margin - rect.left)
-    const overflowRight = Math.max(0, rect.right - (vw - margin))
-    const delta = overflowLeft > 0 ? overflowLeft : (overflowRight > 0 ? -overflowRight : 0)
-    if (delta !== 0) {
-      bubble.style.setProperty('--shiftX', `${delta}px`)
-    }
   }
 
   onMount(async () => {
@@ -846,10 +782,10 @@
                     aria-pressed={selected.has(b.idxStart + j)}
                   >
                     {@html renderSentenceHTML(b.idxStart + j, s, wordHighlights[b.idxStart + j], wordTooltipVisible[b.idxStart + j], wordTooltipWordIndex[b.idxStart + j])}
-                    {#if bubbleVisible.has(b.idxStart + j)}
-                      <span class="jp-bubble" aria-label="Japanese translation">{s.jp}</span>
-                    {/if}
                   </span>
+                  {#if bubbleVisible.has(b.idxStart + j)}
+                    <span class="jp-translation" aria-label="Japanese translation">{s.jp}</span>
+                  {/if}
                   <span class="sr-only">.</span>
                 {/key}
               {/each}
@@ -915,8 +851,8 @@
     border-radius: 12px;
     padding: 1.25rem 1.25rem 1.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    max-height: 75vh; /* Limit to 80% of the viewport height */
-    overflow: hidden; /* Hide overflowing content and rely on pagination */
+    max-height: 75vh;
+    overflow:scroll;
   word-break: normal;
   overflow-wrap: anywhere;
   hyphens: auto;
@@ -948,34 +884,7 @@
   .reader p > .sentenceInline:last-child::after { content: ''; }
   .sentenceInline.selected { background: #ffe9a8; }
   .sentenceInline:focus-visible { outline: 2px solid rgba(100,150,250,.55); outline-offset: 2px; }
-  .jp-bubble {
-    position: absolute;
-    left: 0; right: auto;
-    bottom: -2.2em;
-    width: max-content;
-    min-width: 260px;
-    max-width: min(72ch, 80vw);
-    white-space: normal;
-    word-break: normal;
-    overflow-wrap: anywhere;
-    line-break: auto;
-    font-size: .95rem;
-    line-height: 1.4;
-    color: #3a2c00;
-    background: #fffef8;
-    border: 1px solid #ffd18a;
-    border-radius: 6px;
-    padding: .4rem .6rem;
-    box-shadow: 0 2px 6px rgba(0,0,0,.08);
-    z-index: 1;
-  }
-  /* Horizontal alignment modifiers */
-  :global(.jp-bubble.align-left) { left: 0; right: auto; transform: translateX(var(--shiftX, 0)); }
-  :global(.jp-bubble.align-right) { right: 0; left: auto; transform: translateX(var(--shiftX, 0)); }
-  :global(.jp-bubble.align-center) { left: 50%; transform: translateX(calc(-50% + var(--shiftX, 0))); }
-  /* Vertical placement modifiers */
-  :global(.jp-bubble.pos-above) { bottom: auto; top: -2.2em; }
-  :global(.jp-bubble.pos-below) { bottom: -2.2em; top: auto; }
+  .jp-translation { display: block; font-size: .7rem; color: #0a56ad; margin: .15rem 0 .4rem .25rem; line-height: 1.2; }
 
   .pagination {
     display: flex;
@@ -984,10 +893,6 @@
     gap: 1rem;
     margin-top: 1rem;
   }
-  .rating-gate { position: relative; }
-  .rating-gate:not(.rated) { margin-top: .5rem; }
-  .rating-gate .scrim { position: absolute; inset: 0; background: rgba(255,255,255,.0); pointer-events: none; }
-  .rating-gate.rated { display: none; }
   .interaction-help { font-size: .7rem; color: #666; margin: .75rem 0 0; text-align: center; }
   .pagination .page-info { color: #444; font-size: .95rem; }
   .pagination .rate { margin-left: .5rem; }

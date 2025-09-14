@@ -39,15 +39,17 @@ describe('BookPage', () => {
     }
   })
 
-  it('shows and hides translation bubbles on click', async () => {
+  it('shows and hides translation text on click', async () => {
     const { container } = render(BookPage, { bookId: 'test' })
     const sentence = container.querySelector('.sentenceInline')
     if (sentence) {
       await fireEvent.click(sentence)
-      const bubble = container.querySelector('.jp-bubble')
-      expect(bubble).toBeTruthy()
+      const translation = container.querySelector('.jp-translation')
+      expect(translation).toBeTruthy()
       await fireEvent.click(sentence)
-      expect(bubble?.classList.contains('visible')).toBe(false)
+      // After second click translation should be removed
+      const gone = container.querySelector('.jp-translation')
+      expect(gone).toBeFalsy()
     }
   })
 })
