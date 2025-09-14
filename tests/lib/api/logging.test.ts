@@ -68,7 +68,8 @@ describe('logging API helpers', () => {
     await logHowWasIt('u2', 10, 'easy')
     const urls = fetchMock.mock.calls.map((c: unknown[]) => String(c[0]))
     expect(urls.some((u) => /type=openWord/.test(u))).toBe(true)
-    expect(urls.some((u) => /value=5/.test(u))).toBe(true)
+    // word index is incremented to 1-based inside logOpenWord, so expect value=6
+    expect(urls.some((u) => /value=6/.test(u))).toBe(true)
     expect(urls.some((u) => /type=howWasIt/.test(u))).toBe(true)
     expect(urls.some((u) => /value=easy/.test(u))).toBe(true)
   })

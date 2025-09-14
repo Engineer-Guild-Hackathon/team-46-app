@@ -7,6 +7,7 @@
   import { ChevronLeft, ChevronRight } from '@lucide/svelte'
     import Button from '$lib/components/ui/button/button.svelte'
   import { logOpenJapanese, logDifficultBtn, logOpenWord } from '$lib/api/logging'
+  import HowWasItRating from '$lib/components/HowWasItRating.svelte'
 
   export let bookId: string
 
@@ -56,6 +57,10 @@
   const TOUCH_MOVE_CANCEL_PX = 16
   let suppressClickForSentence: number | null = null
   let lastLongPressAt = 0
+  // howWasIt rating state handled by child component; we just change key per page
+  let ratingKey = 0
+  let pageRated = false
+  function handleRated() { pageRated = true }
 
   async function loadPage(start = 0, charCountParam?: number, preferCache = false) {
     loading = true
@@ -356,6 +361,9 @@
     const nextStart = lastEnd + 1
   // Clear current selections/highlights before navigating
   clearSelections()
+  // reset howWasIt state for new page
+  ratingKey += 1
+  pageRated = false
   // Always fetch next page from API (do not use cache)
   await loadPage(nextStart, undefined, false)
   }
@@ -365,6 +373,8 @@
     const prev = prevStarts.pop() as number
   // Clear current selections/highlights before navigating
   clearSelections()
+  // reset howWasIt state when moving back
+  ratingKey += 1
   // Prefer cache for previous pages
   await loadPage(prev, undefined, true)
   }
@@ -790,11 +800,12 @@
         <polyline points="15 18 9 12 15 6"/>
       </svg>
     </Button>
-    <h2 class="title" title={headerTitle}>{headerTitle}</h2>
+    <h3 class="title" title={headerTitle}>{headerTitle}</h3>
     <div class="actions">
   <button class="btn btn-primary difficultBtn" type="button" aria-label="Mark difficult" disabled={loading} on:click={handleDifficult}>難しい</button>
     </div>
   </header>
+    <p class="interaction-help" aria-label="Usage help">クリックで単語表示、長押しで文章の意味を表示</p>
 
   {#if loading}
     <section class="book-text">
@@ -849,17 +860,25 @@
     </section>
   {/if}
 
-  <nav class="pagination" aria-label="Page navigation">
-    <button class="btn btn-outline" type="button" aria-label="Previous page" on:click={previousPage} disabled={prevStarts.length === 0 || loading}>
+  {#if pageRated}
+  <nav class="pagination" aria-label="Page navigation" aria-hidden={!pageRated}>
+    <button class="btn btn-outline" type="button" aria-label="Previous page" on:click={previousPage} disabled={prevStarts.length === 0 || loading || !pageRated}>
       <span class="icon"><ChevronLeft size={16} /></span>
       <span class="btn-label">Previous</span>
     </button>
   <span class="page-info rate">Rate: {rateDisplay}</span>
-  <button class="btn btn-outline" type="button" aria-label="Next page" on:click={nextPage} disabled={!canNext || loading}>
+  <button class="btn btn-outline" type="button" aria-label="Next page" on:click={nextPage} disabled={!canNext || loading || !pageRated}>
       <span class="btn-label">Next</span>
       <span class="icon"><ChevronRight size={16} /></span>
     </button>
   </nav>
+  {/if}
+  {#if !pageRated}
+  <p style="color: gray; font-size: 0.8rem;">ぺージの評価後、次のページに進むことができます。</p>
+    <HowWasItRating key={ratingKey} on:rated={handleRated} userRate={userRate} userId={(typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous'} />
+      <div class="scrim" aria-hidden="true"></div>
+      
+  {/if}
 </main>
 
 <style>
@@ -876,7 +895,7 @@
   :global(.btn-ghost) { background: transparent; border-color: #e3e7ee; }
   :global(.btn-ghost):hover { background: #f6f7f9; }
   :global(.backBtn) { width: 2rem; justify-content: center; }
-  .title { font-size: 1.1rem; margin: 0; }
+  .title { font-size: 0.9rem; margin: 0; }
   :global(.btn-primary) { background: #1f6feb; color: white; border-color: transparent; }
   :global(.btn-primary):hover { background: #145fd1; }
   :global(.pageBtn) svg { display: block; }
@@ -965,6 +984,11 @@
     gap: 1rem;
     margin-top: 1rem;
   }
+  .rating-gate { position: relative; }
+  .rating-gate:not(.rated) { margin-top: .5rem; }
+  .rating-gate .scrim { position: absolute; inset: 0; background: rgba(255,255,255,.0); pointer-events: none; }
+  .rating-gate.rated { display: none; }
+  .interaction-help { font-size: .7rem; color: #666; margin: .75rem 0 0; text-align: center; }
   .pagination .page-info { color: #444; font-size: .95rem; }
   .pagination .rate { margin-left: .5rem; }
   :global(.word) { cursor: pointer; word-break: break-word; }
