@@ -41,8 +41,10 @@
   // Persisted user reading rate (backend provided) stored per book
   let userRate: number | null = null
   const rateStorageKey = (id: string) => `bookRate:${id}`
-  // Currently highlighted word index per sentence
-  let wordHighlights: Record<number, number> = {}
+  // Currently highlighted word indices per sentence (multiple allowed)
+  let wordHighlights: Record<number, Set<number>> = {}
+  // Track which specific word (per sentence) should display the tooltip
+  let wordTooltipWordIndex: Record<number, number> = {}
   // Timestamp of last word selection (reference for potential suppression logic)
   let _lastWordSelectionAt = 0 // internal timestamp (not currently read)
   // Word tooltip visibility timers
@@ -382,61 +384,44 @@
     showBubble(i)
   }
 
+  // LEFT CLICK -> select / toggle word highlight (flipped behavior)
   function handleClick(i: number, e: MouseEvent) {
-    if (e.button !== 0) return // only left button
+    if (e.button !== 0) return
+    // If a long-press just triggered sentence translation, suppress immediate word selection
     if (suppressClickForSentence === i && Date.now() - lastLongPressAt < 600) {
-      // skip sentence toggle if a long-press just triggered word highlight
       suppressClickForSentence = null
       return
     }
-    // Left click now toggles sentence translation
-    toggleSentence(i)
-  }
-
-  function handleContextMenu(i: number, e: MouseEvent) {
-    e.preventDefault()
-    // Right click now toggles a word highlight
-    const sel = window.getSelection()
-    if (sel && sel.type === 'Range') return
     const idx = getWordIndexAtPointer(i, e as unknown as PointerEvent)
-    console.debug('[BookPage] contextmenu event', { sentenceIndex: i, idx })
     if (idx == null) return
-    if (wordHighlights[i] === idx) {
-      // Keep existing highlight; do not remove on repeated right-click
-      console.debug('[BookPage] word already highlighted (contextmenu)', { sentenceIndex: i, wordIndex: idx })
-      return
-    }
-    wordHighlights[i] = idx
-    reassignWordHighlights()
-    wordClickCountForRequest++
-  _lastWordSelectionAt = Date.now()
-    console.debug('[BookPage] word selected (contextmenu)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
-  // Show timed tooltip for selected word
-  showWordTooltip(i)
-  }
-
-  // Fallback: capture right-button mousedown early (some browsers may not fire contextmenu quickly on mobile emulation)
-  function handleMouseDown(i: number, e: MouseEvent) {
-    if (e.button !== 2) return
-    // mirror context menu behavior without preventing default yet (allow us to suppress later)
-    const sel = window.getSelection()
-    if (sel && sel.type === 'Range') return
-    const idx = getWordIndexAtPointer(i, e as unknown as PointerEvent)
-    console.debug('[BookPage] mousedown right button', { sentenceIndex: i, idx })
-    if (idx == null) return
-    if (wordHighlights[i] === idx) {
-      delete wordHighlights[i]
+    const set = wordHighlights[i] || (wordHighlights[i] = new Set<number>())
+    if (set.has(idx)) {
+      set.delete(idx)
+      if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i]
+      if (set.size === 0) delete wordHighlights[i]
       reassignWordHighlights()
-      console.debug('[BookPage] word highlight removed (mousedown)', { sentenceIndex: i, wordIndex: idx })
       hideWordTooltip(i)
       return
     }
-    wordHighlights[i] = idx
+    set.add(idx)
+    wordTooltipWordIndex[i] = idx
     reassignWordHighlights()
     wordClickCountForRequest++
-  _lastWordSelectionAt = Date.now()
-    console.debug('[BookPage] word selected (mousedown)', { sentenceIndex: i, wordIndex: idx, wordClickCountForRequest })
-    showWordTooltip(i)
+    _lastWordSelectionAt = Date.now()
+    showWordTooltip(i, idx)
+  }
+
+  // CONTEXT MENU (right-click) -> toggle sentence translation bubble (flipped)
+  function handleContextMenu(i: number, e: MouseEvent) {
+    e.preventDefault()
+    toggleSentence(i)
+  }
+
+  // Fallback: capture right-button mousedown early (some browsers may not fire contextmenu quickly on mobile emulation)
+  // RIGHT BUTTON mousedown -> toggle sentence translation (consistent with contextmenu)
+  function handleMouseDown(i: number, e: MouseEvent) {
+    if (e.button !== 2) return
+    toggleSentence(i)
   }
 
   // Helper to get word index from pointer/mouse event
@@ -447,7 +432,6 @@
   // --- Touch long press (simulate right click) ---
   function touchPointerDown(i: number, e: PointerEvent) {
     if (e.pointerType !== 'touch') return
-    // Avoid interfering with multi-touch gestures
     if ((e as any).isPrimary === false) return
     const existing = touchPresses[i]
     if (existing && existing.timer) window.clearTimeout(existing.timer)
@@ -456,23 +440,13 @@
       startY: e.clientY,
       triggered: false,
       timer: window.setTimeout(() => {
-        // Long press elapsed
-        const idx = getWordIndexAtPointer(i, e)
-        if (idx == null) return
-        if (wordHighlights[i] !== idx) {
-          wordHighlights[i] = idx
-          reassignWordHighlights()
-          wordClickCountForRequest++
-          _lastWordSelectionAt = Date.now()
-        }
-        // prevent upcoming click from toggling sentence
-        suppressClickForSentence = i
+        // Long press elapsed -> toggle sentence translation (was word highlight)
+        toggleSentence(i)
+        suppressClickForSentence = i // suppress immediate word selection after releasing
         lastLongPressAt = Date.now()
         touchPresses[i].triggered = true
-        // Suppress native selection
-  try { window.getSelection()?.removeAllRanges() } catch { /* ignore selection */ }
-        console.debug('[BookPage] touch long-press word highlight', { sentenceIndex: i, wordIndex: idx })
-  showWordTooltip(i)
+        try { window.getSelection()?.removeAllRanges() } catch { /* ignore selection */ }
+        console.debug('[BookPage] touch long-press sentence translation', { sentenceIndex: i })
       }, LONG_PRESS_TOUCH_MS)
     }
   }
@@ -536,9 +510,11 @@
   }
 
   function reassignWordHighlights() {
-    // trigger Svelte reactivity for object mutation
-  wordHighlights = { ...wordHighlights }
-  console.debug('[BookPage] wordHighlights state (tooltip applied if index matches)', wordHighlights)
+    // clone sets to trigger Svelte reactivity
+    const clone: Record<number, Set<number>> = {}
+    for (const k in wordHighlights) clone[k] = new Set(wordHighlights[k])
+    wordHighlights = clone
+    console.debug('[BookPage] wordHighlights state (multiple)', Object.fromEntries(Object.entries(wordHighlights).map(([k,v]) => [k, Array.from(v)])))
   }
 
   function clearSelections() {
@@ -549,7 +525,8 @@
     bubbleTimers.forEach(id => window.clearTimeout(id))
     bubbleTimers.clear()
     // Word highlights
-    wordHighlights = {}
+  wordHighlights = {}
+  wordTooltipWordIndex = {}
     // Word tooltips & timers
     wordTooltipTimers.forEach(id => window.clearTimeout(id))
     wordTooltipTimers.clear()
@@ -563,11 +540,12 @@
     console.debug('[BookPage] selections cleared on page change')
   }
 
-  function showWordTooltip(i: number) {
+  function showWordTooltip(i: number, wordIdx?: number) {
     // clear existing
     const existing = wordTooltipTimers.get(i)
     if (existing) window.clearTimeout(existing)
-  wordTooltipVisible[i] = true
+    if (wordIdx !== undefined) wordTooltipWordIndex[i] = wordIdx
+    wordTooltipVisible[i] = true
   // force reactive update
   wordTooltipVisible = { ...wordTooltipVisible }
     // schedule hide
@@ -576,9 +554,10 @@
   }
 
   function hideWordTooltip(i: number) {
-  delete wordTooltipVisible[i]
-  // force reactive update
-  wordTooltipVisible = { ...wordTooltipVisible }
+    delete wordTooltipVisible[i]
+    delete wordTooltipWordIndex[i]
+    // force reactive update
+    wordTooltipVisible = { ...wordTooltipVisible }
     const existing = wordTooltipTimers.get(i)
     if (existing) window.clearTimeout(existing)
     wordTooltipTimers.delete(i)
@@ -773,15 +752,16 @@
   $: headerTitle = "CHAPTER I. Down the Rabbit-Hole";
   $: rateDisplay = userRate !== null ? userRate : '—'
 
-  function renderSentenceHTML(i: number, s: Sentence, highlightIdx?: number, tooltipVisible?: boolean): string {
+  function renderSentenceHTML(i: number, s: Sentence, highlightSet?: Set<number>, tooltipVisible?: boolean, tooltipWordIdx?: number): string {
     const text = formatSentence(s.en)
     const tokens = text.split(/(\s+)/)
     return tokens.map((tok, idx) => {
       if (/^\s*$/.test(tok)) return tok
       const safe = tok.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      const cls = idx === highlightIdx ? 'word word-highlight' : 'word'
-  if (idx === highlightIdx && tooltipVisible) {
-  return `<span class="${cls}" data-wi="${idx}">${safe}<span class="word-tooltip" aria-label="Placeholder translation">Translation unavailable</span></span>`
+      const isHighlighted = !!highlightSet && highlightSet.has(idx)
+      const cls = isHighlighted ? 'word word-highlight' : 'word'
+      if (isHighlighted && tooltipVisible && idx === tooltipWordIdx) {
+        return `<span class="${cls}" data-wi="${idx}">${safe}<span class="word-tooltip" aria-label="Placeholder translation">Translation unavailable</span></span>`
       }
       return `<span class="${cls}" data-wi="${idx}">${safe}</span>`
     }).join('')
@@ -843,7 +823,7 @@
                     }}
                     aria-pressed={selected.has(b.idxStart + j)}
                   >
-                    {@html renderSentenceHTML(b.idxStart + j, s, wordHighlights[b.idxStart + j], wordTooltipVisible[b.idxStart + j])}
+                    {@html renderSentenceHTML(b.idxStart + j, s, wordHighlights[b.idxStart + j], wordTooltipVisible[b.idxStart + j], wordTooltipWordIndex[b.idxStart + j])}
                     {#if bubbleVisible.has(b.idxStart + j)}
                       <span class="jp-bubble" aria-label="Japanese translation">{s.jp}</span>
                     {/if}
