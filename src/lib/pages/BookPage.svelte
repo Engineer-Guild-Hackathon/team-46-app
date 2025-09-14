@@ -408,10 +408,17 @@
     wordClickCountForRequest++
     _lastWordSelectionAt = Date.now()
     try {
+      const sentence = sentences[i]
+      const rawText = sentence?.en ?? ''
+      const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g
+      const words: string[] = []
+      let m: RegExpExecArray | null
+      while ((m = re.exec(rawText)) !== null) words.push(m[0])
+      const wordValue = words[idx] ?? String(idx)
       void logOpenWord(
         (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
         userRate ?? 0,
-        idx
+        wordValue
       )
     } catch { /* ignore word log */ }
   showWordTooltip(i, idx)
@@ -486,33 +493,30 @@
   function selectWordAtPointer(i: number, e: PointerEvent) {
     const spanEl = elRefs[i]
     if (!spanEl) return
-    // Try to find exact word span under pointer
     const el = document.elementFromPoint(e.clientX, e.clientY)
-    let targetSpan: HTMLElement | null = null
     if (el && spanEl.contains(el)) {
       const candidate = (el.closest('span.word') || el) as HTMLElement
-      if (candidate && candidate.dataset?.wi !== undefined) targetSpan = candidate
+      if (candidate && candidate.dataset?.wi !== undefined) {
+        const idx = Number(candidate.dataset.wi)
+        if (!Number.isNaN(idx)) return idx
+      }
     }
-  let tokenIndex: number | undefined
-  if (targetSpan && targetSpan.dataset.wi) tokenIndex = Number(targetSpan.dataset.wi)
-  else tokenIndex = pickWordByRatio(i, e)
-  if (tokenIndex === undefined || Number.isNaN(tokenIndex)) return
-  return tokenIndex
+    // Fallback ratio method across only word spans
+    return pickWordByRatio(i, e)
   }
 
   function pickWordByRatio(i: number, e: PointerEvent): number | undefined {
-    const s = sentences[i]
-    if (!s) return undefined
-    const text = formatSentence(s.en)
-    const tokens = text.split(/(\s+)/)
-    const nonWs = tokens.map((tok, idx) => ({ tok, idx })).filter(t => !/^\s*$/.test(t.tok))
-    const spanEl = elRefs[i]
-    if (!spanEl || nonWs.length === 0) return undefined
-    const rect = spanEl.getBoundingClientRect()
-    const relX = Math.min(Math.max(0, e.clientX - rect.left), Math.max(0.01, rect.width))
-    const ratio = rect.width > 0 ? relX / rect.width : 0
-    const chosen = Math.min(nonWs.length - 1, Math.max(0, Math.floor(ratio * nonWs.length)))
-    return nonWs[chosen].idx
+  const spanEl = elRefs[i]
+  if (!spanEl) return undefined
+  const wordEls = Array.from(spanEl.querySelectorAll('span.word')) as HTMLElement[]
+  if (wordEls.length === 0) return undefined
+  const rect = spanEl.getBoundingClientRect()
+  const x = Math.min(Math.max(0, e.clientX - rect.left), rect.width)
+  const ratio = rect.width > 0 ? x / rect.width : 0
+  const idx = Math.min(wordEls.length - 1, Math.max(0, Math.floor(ratio * wordEls.length)))
+  const target = wordEls[idx]
+  if (target && target.dataset.wi) return Number(target.dataset.wi)
+  return undefined
   }
 
   function reassignWordHighlights() {
@@ -699,23 +703,45 @@
   $: headerTitle = "CHAPTER I. Down the Rabbit-Hole";
   $: rateDisplay = userRate !== null ? userRate : '—'
 
-  function renderSentenceHTML(i: number, s: Sentence, highlightSet?: Set<number>, tooltipVisible?: boolean, tooltipWordIdx?: number): string {
-    const text = formatSentence(s.en)
-    const tokens = text.split(/(\s+)/)
-    return tokens.map((tok, idx) => {
-      if (/^\s*$/.test(tok)) return tok
-      const safe = tok.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      const isHighlighted = !!highlightSet && highlightSet.has(idx)
-      const cls = isHighlighted ? 'word word-highlight' : 'word'
-      if (isHighlighted && tooltipVisible && idx === tooltipWordIdx) {
-        return `<span class="${cls}" data-wi="${idx}">${safe}<span class="word-tooltip" aria-label="Placeholder translation">Translation unavailable</span></span>`
-      }
-      return `<span class="${cls}" data-wi="${idx}">${safe}</span>`
-    }).join('')
+  // Escape util
+  function esc(t: string) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+  // Produce list of word tokens (letters/digits with internal hyphens). Hyphens allowed only inside words.
+  function extractWordTokens(text: string): string[] {
+    const words: string[] = []
+    const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      words.push(m[0])
+    }
+    return words
   }
-  
-  function formatSentence(t: string): string {
-    return t.replace(/\s+/g, ' ').trim()
+  function formatSentence(t: string): string { return t.replace(/\s+/g,' ').trim() }
+  // Render sentence where only word tokens (letters/digits + internal hyphens) become selectable spans.
+  function renderSentenceHTML(i: number, s: Sentence, highlightSet?: Set<number>, tooltipVisible?: boolean, tooltipWordIdx?: number): string {
+    const raw = formatSentence(s.en)
+    const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g
+    let last = 0
+    let wi = 0
+    let out: string[] = []
+    let m: RegExpExecArray | null
+    while ((m = re.exec(raw)) !== null) {
+      if (m.index > last) {
+        // punctuation / spaces chunk
+        out.push(esc(raw.slice(last, m.index)))
+      }
+      const word = m[0]
+      const isHighlighted = !!highlightSet && highlightSet.has(wi)
+      const cls = isHighlighted ? 'word word-highlight' : 'word'
+      if (isHighlighted && tooltipVisible && wi === tooltipWordIdx) {
+        out.push(`<span class="${cls}" data-wi="${wi}">${esc(word)}<span class=\"word-tooltip\" aria-label=\"Placeholder translation\">Translation unavailable</span></span>`)
+      } else {
+        out.push(`<span class="${cls}" data-wi="${wi}">${esc(word)}</span>`)
+      }
+      wi++
+      last = m.index + word.length
+    }
+    if (last < raw.length) out.push(esc(raw.slice(last)))
+    return out.join('')
   }
 </script>
 

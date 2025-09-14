@@ -59,18 +59,15 @@ export function logOpenJapanese(
   });
 }
 
+// Now accepts the actual word instead of index. For backward compatibility you can still pass an index string.
 export function logOpenWord(
   userId: string,
   rate: number | string,
-  wordIndex: number,
+  word: string,
 ): Promise<FeedbackResult> {
-  wordIndex += 1; // convert 0-based to 1-based index
-  return logFeedback({
-    userId,
-    rate,
-    type: "openWord",
-    value: String(wordIndex),
-  });
+  const normalizedWord =
+    typeof word === "string" ? word.toLowerCase() : String(word);
+  return logFeedback({ userId, rate, type: "openWord", value: normalizedWord });
 }
 
 export function logDifficultBtn(
