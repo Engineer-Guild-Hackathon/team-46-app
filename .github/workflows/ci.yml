@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
 
 permissions:
   contents: read
@@ -32,6 +32,9 @@ jobs:
 
       - name: Run ESLint
         run: npm run lint
+
+      - name: Check Prettier formatting
+        run: npm run format:check
 
       - name: Run Vitest
         run: npx vitest run --reporter=default
