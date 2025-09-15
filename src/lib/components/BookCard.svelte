@@ -8,7 +8,7 @@
 
 <button class="card" type="button" on:click={handleClick} aria-label={`Open ${book.title}`}>
   <div class="cover-wrap">
-    <div class="cover">
+    <div class="cover chromatic-ignore">
       {#if book.coverUrl}
         <img src={book.coverUrl} alt={`Cover of ${book.title}`} />
       {:else}
