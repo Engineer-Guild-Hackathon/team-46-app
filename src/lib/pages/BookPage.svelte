@@ -735,23 +735,33 @@
     }
 
     // compute initial words-per-page based on reader element (or body fallback)
+    // NOTE: Simplified algorithm (binary search word count for one line * number of lines).
+    // Passing lineHeight to keep estimation stable when styles change.
     if (readerEl) {
-      // Apply a slight downscale because font-size increased (~14%); reduce estimated words/page
-      wordsPerPage = computeWordsPerPage(readerEl, 0.88) || 0
+      wordsPerPage = computeWordsPerPage(readerEl, { lineHeight: 1.7 }) || 0
       console.debug('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
       // observe for container changes and update wordsPerPage (does not auto-reload)
-      const stop = observeWordsPerPage(readerEl, (n) => {
-        wordsPerPage = Math.floor((n || 0) * 0.88)
-        console.debug('[wpp] wordsPerPage updated=', wordsPerPage)
-      })
+      const stop = observeWordsPerPage(
+        readerEl,
+        (n) => {
+          wordsPerPage = n || 0
+          console.debug('[wpp] wordsPerPage updated=', wordsPerPage)
+        },
+        { lineHeight: 1.7 }
+      )
       onDestroy(() => stop && stop())
     } else {
-      wordsPerPage = computeWordsPerPage(document.body, 0.88) || 0
+      wordsPerPage = computeWordsPerPage(document.body, { lineHeight: 1.7 }) || 0
       console.debug('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
     }
 
     // derive a conservative charCount from wordsPerPage and request the page
-    const estimated = Math.max(80, Math.min(4000, Math.floor(wordsPerPage * AVG_CHARS_PER_WORD)))
+    // Conservative estimation: cap wordsPerPage for char estimation at 220 and use higher avg char multiplier
+    const wppForEstimate = Math.min(wordsPerPage, 220)
+    const estimated = Math.max(
+      80,
+      Math.min(4000, Math.floor(wppForEstimate * (AVG_CHARS_PER_WORD + 1)))
+    )
     charCountForRequest = estimated
     console.debug('[BookPage] estimated charCount from wordsPerPage=', estimated)
 
