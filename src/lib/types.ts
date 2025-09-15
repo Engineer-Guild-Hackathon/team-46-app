@@ -1,6 +1,6 @@
 export type Book = {
-  id: string
-  title: string
-  author: string
-  coverUrl?: string
-}
+  id: string;
+  title: string;
+  author: string;
+  coverUrl?: string;
+};

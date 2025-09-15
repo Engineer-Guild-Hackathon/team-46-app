@@ -1,15 +1,15 @@
-import type { Meta, StoryObj } from '@storybook/svelte-vite'
-import MainPage from './MainPage.svelte'
+import type { Meta, StoryObj } from "@storybook/svelte-vite";
+import MainPage from "./MainPage.svelte";
 
 const meta = {
-  title: 'Pages/MainPage',
+  title: "Pages/MainPage",
   component: MainPage,
   parameters: {
-    layout: 'fullscreen',
+    layout: "fullscreen",
   },
-} satisfies Meta<MainPage>
+} satisfies Meta<MainPage>;
 
-export default meta
-type Story = StoryObj<typeof meta>
+export default meta;
+type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {}
+export const Default: Story = {};

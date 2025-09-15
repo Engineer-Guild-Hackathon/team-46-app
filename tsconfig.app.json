@@ -21,7 +21,7 @@
       "$lib": ["src/lib"],
       "$lib/*": ["src/lib/*"]
     },
-  "types": ["svelte", "vitest"]
+    "types": ["svelte", "vitest"]
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]
 }

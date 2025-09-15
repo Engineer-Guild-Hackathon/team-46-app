@@ -1,32 +1,32 @@
-import type { Meta, StoryObj } from '@storybook/svelte-vite'
-import BookPage from './BookPage.svelte'
+import type { Meta, StoryObj } from "@storybook/svelte-vite";
+import BookPage from "./BookPage.svelte";
 
 const meta = {
-  title: 'Pages/BookPage',
+  title: "Pages/BookPage",
   component: BookPage,
   parameters: {
-    layout: 'fullscreen',
+    layout: "fullscreen",
   },
   argTypes: {
     bookId: {
-      control: { type: 'text' },
-      description: 'ID of the book to display',
+      control: { type: "text" },
+      description: "ID of the book to display",
     },
   },
   args: {
-    bookId: '1',
+    bookId: "1",
   },
-} satisfies Meta<BookPage>
+} satisfies Meta<BookPage>;
 
-export default meta
-type Story = StoryObj<typeof meta>
+export default meta;
+type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {}
+export const Default: Story = {};
 
 export const Book2: Story = {
-  args: { bookId: '2' },
-}
+  args: { bookId: "2" },
+};
 
 export const NotFound: Story = {
-  args: { bookId: 'nope' },
-}
+  args: { bookId: "nope" },
+};
