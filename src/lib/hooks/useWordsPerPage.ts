@@ -6,7 +6,8 @@
 // - Compute words per line from container width / avgWordWidth
 // - Return floor(lines * wordsPerLine)
 
-export function computeWordsPerPage(el: HTMLElement | null): number {
+// Optional second param allows applying a manual adjustment factor when UI font size changes
+export function computeWordsPerPage(el: HTMLElement | null, scale: number = 1): number {
   // Helper to compute from measured width/height and computed style
   function computeFromDims(
     containerWidth: number,
@@ -111,7 +112,7 @@ export function computeWordsPerPage(el: HTMLElement | null): number {
     // no element -> use viewport based estimate
     const w = Math.max(320, window.innerWidth * 0.8)
     const h = Math.max(200, window.innerHeight * 0.8)
-    return computeFromDims(w, h, window.getComputedStyle(document.body))
+    return Math.floor(computeFromDims(w, h, window.getComputedStyle(document.body)) * scale)
   }
 
   const rect = el.getBoundingClientRect()
@@ -127,18 +128,18 @@ export function computeWordsPerPage(el: HTMLElement | null): number {
       Math.max(200, window.innerHeight * 0.8),
       style
     )
-    if (probe > 0) return probe
+    if (probe > 0) return Math.floor(probe * scale)
     // fallback to dims
     const p = computeFromDims(width || window.innerWidth, height || window.innerHeight, style)
-    return p
+    return Math.floor(p * scale)
   }
 
   const estimate = computeFromDims(width, height, style)
   // if estimate is tiny (likely wrong), run probe to get a reliable count
   if (estimate < 10) {
-    return measureByProbe(width, height, style)
+    return Math.floor(measureByProbe(width, height, style) * scale)
   }
-  return estimate
+  return Math.floor(estimate * scale)
 }
 
 export function observeWordsPerPage(el: HTMLElement | null, cb: (n: number) => void) {

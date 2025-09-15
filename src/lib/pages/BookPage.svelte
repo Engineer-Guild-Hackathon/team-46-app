@@ -748,16 +748,17 @@
 
     // compute initial words-per-page based on reader element (or body fallback)
     if (readerEl) {
-      wordsPerPage = computeWordsPerPage(readerEl) || 0
+      // Apply a slight downscale because font-size increased (~14%); reduce estimated words/page
+      wordsPerPage = computeWordsPerPage(readerEl, 0.88) || 0
       console.debug('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
       // observe for container changes and update wordsPerPage (does not auto-reload)
       const stop = observeWordsPerPage(readerEl, (n) => {
-        wordsPerPage = n || 0
+        wordsPerPage = Math.floor((n || 0) * 0.88)
         console.debug('[wpp] wordsPerPage updated=', wordsPerPage)
       })
       onDestroy(() => stop && stop())
     } else {
-      wordsPerPage = computeWordsPerPage(document.body) || 0
+      wordsPerPage = computeWordsPerPage(document.body, 0.88) || 0
       console.debug('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
     }
 
@@ -1074,8 +1075,9 @@
   }
   .reader {
     font-family: Georgia, 'Times New Roman', serif;
-    font-size: 1.1rem;
-    line-height: 1.75;
+    /* Increased base font size for readability and adjusted line-height */
+    font-size: 1.25rem;
+    line-height: 1.7;
     color: #1b1b1b;
     background: #fff;
     border: 1px solid #eceff3;
