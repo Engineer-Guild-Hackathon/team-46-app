@@ -1,11 +1,18 @@
 <script lang="ts">
   import { onMount, tick, onDestroy } from 'svelte'
   // local Sentence shape for this component (keeps file self-contained)
-  type Sentence = { type: 'text' | 'subtitle'; en: string; jp?: string; level?: string; sentenceNo?: number }
+  type Sentence = {
+    type: 'text' | 'subtitle'
+    en: string
+    jp?: string
+    jp_word?: string[]
+    level?: string
+    sentenceNo?: number
+  }
   import { computeWordsPerPage, observeWordsPerPage } from '../hooks/useWordsPerPage'
   import { getTextPage } from '$lib/api/text'
   import { ChevronLeft, ChevronRight } from '@lucide/svelte'
-    import Button from '$lib/components/ui/button/button.svelte'
+  import Button from '$lib/components/ui/button/button.svelte'
   import { logOpenJapanese, logDifficultBtn, logOpenWord } from '$lib/api/logging'
 
   export let bookId: string
@@ -50,7 +57,10 @@
   let wordTooltipVisible: Record<number, boolean> = {}
   const wordTooltipTimers = new Map<number, number>()
   // Touch long-press support (mobile simulate right-click)
-  const touchPresses: Record<number, { timer: number; startX: number; startY: number; triggered: boolean }> = {}
+  const touchPresses: Record<
+    number,
+    { timer: number; startX: number; startY: number; triggered: boolean }
+  > = {}
   const LONG_PRESS_TOUCH_MS = 520
   const TOUCH_MOVE_CANCEL_PX = 16
   let suppressClickForSentence: number | null = null
@@ -60,13 +70,24 @@
     loading = true
     error = null
     sentences = []
-  // clear transient word render cache (recomputed lazily)
+    // clear transient word render cache (recomputed lazily)
     try {
-  let _fromCache = false
+      let _fromCache = false
       let apiTextLength = 0
       // Compute telemetry: seconds since last completed page load
-      const timeSec = lastLoadCompletedAt ? Math.max(0, Math.round((Date.now() - lastLoadCompletedAt) / 1000)) : null
-      let res: { text: Array<{ type: 'text' | 'subtitle'; sentenceNo: number; en: string; jp?: string }>; endSentenceNo: number }
+      const timeSec = lastLoadCompletedAt
+        ? Math.max(0, Math.round((Date.now() - lastLoadCompletedAt) / 1000))
+        : null
+      let res: {
+        text: Array<{
+          type: 'text' | 'subtitle'
+          sentenceNo: number
+          en: string
+          jp?: string
+          jp_word?: string[]
+        }>
+        endSentenceNo: number
+      }
 
       // Try cache for previous pages
       if (preferCache && pageCache.has(start)) {
@@ -75,14 +96,19 @@
         lastEnd = cached.endSentenceNo
         currentStart = start
         apiTextLength = sentences.length
-  _fromCache = true
-        console.debug('[BookPage] Loaded page from cache:', { start, cachedCount: sentences.length, endSentenceNo: lastEnd })
+        _fromCache = true
+        console.debug('[BookPage] Loaded page from cache:', {
+          start,
+          cachedCount: sentences.length,
+          endSentenceNo: lastEnd,
+        })
       } else {
         // Build and log API params
         const apiParams = {
           bookId,
           startSentenceNo: start,
-            userId: (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
+          userId:
+            (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
           charCount: charCountParam ?? charCountForRequest,
           wordClickCount: firstLoad ? null : wordClickCountForRequest,
           sentenceClickCount: firstLoad ? null : sentenceClickCountForRequest,
@@ -96,65 +122,83 @@
         res = apiRes
         if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
           userRate = apiRes.rate
-          try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch { /* ignore persist */ }
+          try {
+            localStorage.setItem(rateStorageKey(bookId), String(userRate))
+          } catch {
+            /* ignore persist */
+          }
         }
 
         // Map to local Sentence shape
-        sentences = res.text.map((t) => ({ type: t.type, en: t.en, jp: t.jp, level: String(t.sentenceNo), sentenceNo: t.sentenceNo }))
+        sentences = res.text.map((t) => ({
+          type: t.type,
+          en: t.en,
+          jp: t.jp,
+          jp_word: t.jp_word,
+          level: String(t.sentenceNo),
+          sentenceNo: t.sentenceNo,
+        }))
         // update pagination state
         lastEnd = res.endSentenceNo
         currentStart = start
         apiTextLength = res.text.length
       }
-  // Important: render the reader content now so measurement can find it
-  loading = false
-      
-  // Reset counters for the next request (we've just reported them)
-  sentenceClickCountForRequest = 0
-  wordClickCountForRequest = 0
-  if (firstLoad) firstLoad = false
+      // Important: render the reader content now so measurement can find it
+      loading = false
 
-  console.debug('[BookPage] Initial sentences loaded:', sentences.length, 'sentences from', currentStart, 'to', lastEnd)
+      // Reset counters for the next request (we've just reported them)
+      sentenceClickCountForRequest = 0
+      wordClickCountForRequest = 0
+      if (firstLoad) firstLoad = false
+
+      console.debug(
+        '[BookPage] Initial sentences loaded:',
+        sentences.length,
+        'sentences from',
+        currentStart,
+        'to',
+        lastEnd
+      )
 
       // Wait for DOM to render so we can measure whether content overflows
       await tick()
-      await new Promise(r => requestAnimationFrame(r)) // Extra frame for element refs to be set
+      await new Promise((r) => requestAnimationFrame(r)) // Extra frame for element refs to be set
       await tick() // Extra tick to ensure element binding is ready
-      
+
       // Ensure the reader element actually exists (loading branch swaps to reader)
       // Retry a few frames if needed
       if (!readerEl) {
         for (let tries = 0; tries < 8 && !readerEl; tries++) {
           readerEl = document.querySelector('article.reader') as HTMLElement | null
           if (readerEl) break
-          await new Promise(r => requestAnimationFrame(r))
+          await new Promise((r) => requestAnimationFrame(r))
           await tick()
         }
       }
-      
+
       console.debug('[BookPage] 🔍 Starting overflow detection after tick+RAF+tick...', {
         hasReaderElBound: !!readerEl,
         sentencesCount: sentences.length,
         loadingState: loading,
         errorState: error,
         blocksLength: blocks.length,
-        currentUrl: window.location.href
+        currentUrl: window.location.href,
       })
-      
+
       try {
         console.debug('[BookPage] 🔍 Checking conditions:', {
           sentencesLength: sentences.length,
           hasReaderEl: !!readerEl,
-          readerElFound: readerEl ? 'YES' : 'NO'
+          readerElFound: readerEl ? 'YES' : 'NO',
         })
-        
+
         if (sentences.length > 0) {
           // Debug: ALWAYS check what's in the DOM, regardless of readerEl binding
           const allArticles = document.querySelectorAll('article')
           const allReaderClass = document.querySelectorAll('.reader')
           const articleReader = document.querySelector('article.reader')
           const bookTextSection = document.querySelector('.book-text')
-          
+
           console.debug('[BookPage] 🔍 DOM INSPECTION:', {
             'article.reader found': !!articleReader,
             '.reader found': !!allReaderClass.length,
@@ -163,16 +207,17 @@
             'readerEl bound': !!readerEl,
             'loading state': loading,
             'error state': error,
-            'allArticles': Array.from(allArticles).map(el => ({
+            allArticles: Array.from(allArticles).map((el) => ({
               tagName: el.tagName,
               className: el.className,
               id: el.id,
-              textContent: el.textContent?.substring(0, 50) + '...'
+              textContent: el.textContent?.substring(0, 50) + '...',
             })),
             'document.body classes': document.body.className,
-            'current HTML structure': document.querySelector('main')?.innerHTML.substring(0, 800) || 'NO MAIN FOUND'
+            'current HTML structure':
+              document.querySelector('main')?.innerHTML.substring(0, 800) || 'NO MAIN FOUND',
           })
-          
+
           // Try to get readerEl if we don't have it (should be bound, but fallback just in case)
           if (!readerEl) {
             // Try multiple selectors to find the reader element
@@ -183,16 +228,20 @@
             if (!readerEl && allArticles.length > 0) {
               readerEl = allArticles[0] as HTMLElement | null
             }
-            
-            console.debug('[BookPage] 🔍 Final readerEl found via fallback:', !!readerEl, readerEl?.className)
+
+            console.debug(
+              '[BookPage] 🔍 Final readerEl found via fallback:',
+              !!readerEl,
+              readerEl?.className
+            )
           }
-          
+
           if (readerEl) {
             console.debug('[BookPage] ✅ Proceeding with overflow detection')
-            
+
             const readerRect = readerEl.getBoundingClientRect()
             const readerStyles = window.getComputedStyle(readerEl)
-            
+
             console.debug('[BookPage] 🔍 READER CONTAINER:', {
               maxHeight: readerStyles.maxHeight,
               actualHeight: Math.round(readerRect.height),
@@ -200,13 +249,13 @@
               bottom: Math.round(readerRect.bottom),
               sentenceCount: sentences.length,
               elRefsCount: Object.keys(elRefs).length,
-              elRefsObject: Object.fromEntries(Object.entries(elRefs).map(([k, v]) => [k, !!v]))
+              elRefsObject: Object.fromEntries(Object.entries(elRefs).map(([k, v]) => [k, !!v])),
             })
-            
+
             // Check for overflow and trim if needed
             let cutOffFound = false
             let firstCutOffIndex = -1
-            
+
             // Check each sentence element to see if its bottom overflows the container
             // Note: we need to check based on block structure since elRefs uses block-based indices
             let sentenceIndex = 0
@@ -215,36 +264,44 @@
                 for (let j = 0; j < block.items.length; j++) {
                   const elementIndex = block.idxStart + j
                   const sentenceEl = elRefs[elementIndex]
-                  
+
                   if (sentenceEl && sentenceIndex < sentences.length) {
                     const sentenceRect = sentenceEl.getBoundingClientRect()
                     const sentenceBottom = sentenceRect.bottom
                     const containerBottom = readerRect.bottom
                     const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
-                    
-                    console.debug(`[BookPage] 📏 Sentence ${sentenceIndex} (elRef ${elementIndex}):`, {
-                      text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
-                      sentenceBottom: Math.round(sentenceBottom),
-                      containerBottom: Math.round(containerBottom),
-                      overflowBy: Math.round(sentenceBottom - containerBottom),
-                      overflows,
-                      hasElement: !!sentenceEl
-                    })
-                    
+
+                    console.debug(
+                      `[BookPage] 📏 Sentence ${sentenceIndex} (elRef ${elementIndex}):`,
+                      {
+                        text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
+                        sentenceBottom: Math.round(sentenceBottom),
+                        containerBottom: Math.round(containerBottom),
+                        overflowBy: Math.round(sentenceBottom - containerBottom),
+                        overflows,
+                        hasElement: !!sentenceEl,
+                      }
+                    )
+
                     if (overflows && firstCutOffIndex === -1) {
                       firstCutOffIndex = sentenceIndex
                       cutOffFound = true
-                      console.debug(`[BookPage] 🚨 BOTTOM OVERFLOW at sentence ${sentenceIndex} (elRef ${elementIndex}):`, {
-                        sentenceNo: sentences[sentenceIndex].sentenceNo,
-                        text: sentences[sentenceIndex].en,
-                        overflowBy: Math.round(sentenceBottom - containerBottom) + 'px'
-                      })
+                      console.debug(
+                        `[BookPage] 🚨 BOTTOM OVERFLOW at sentence ${sentenceIndex} (elRef ${elementIndex}):`,
+                        {
+                          sentenceNo: sentences[sentenceIndex].sentenceNo,
+                          text: sentences[sentenceIndex].en,
+                          overflowBy: Math.round(sentenceBottom - containerBottom) + 'px',
+                        }
+                      )
                       break
                     }
                   } else {
-                    console.debug(`[BookPage] ⚠️ No element ref for sentence ${sentenceIndex} (elRef ${elementIndex})`)
+                    console.debug(
+                      `[BookPage] ⚠️ No element ref for sentence ${sentenceIndex} (elRef ${elementIndex})`
+                    )
                   }
-                  
+
                   sentenceIndex++
                 }
                 if (cutOffFound) break
@@ -252,61 +309,71 @@
                 // Handle subtitle block
                 const elementIndex = block.idx
                 const sentenceEl = elRefs[elementIndex]
-                
+
                 if (sentenceEl && sentenceIndex < sentences.length) {
                   const sentenceRect = sentenceEl.getBoundingClientRect()
                   const sentenceBottom = sentenceRect.bottom
                   const containerBottom = readerRect.bottom
                   const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
-                  
-                  console.debug(`[BookPage] 📏 Subtitle ${sentenceIndex} (elRef ${elementIndex}):`, {
-                    text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
-                    sentenceBottom: Math.round(sentenceBottom),
-                    containerBottom: Math.round(containerBottom),
-                    overflowBy: Math.round(sentenceBottom - containerBottom),
-                    overflows,
-                    hasElement: !!sentenceEl
-                  })
-                  
+
+                  console.debug(
+                    `[BookPage] 📏 Subtitle ${sentenceIndex} (elRef ${elementIndex}):`,
+                    {
+                      text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
+                      sentenceBottom: Math.round(sentenceBottom),
+                      containerBottom: Math.round(containerBottom),
+                      overflowBy: Math.round(sentenceBottom - containerBottom),
+                      overflows,
+                      hasElement: !!sentenceEl,
+                    }
+                  )
+
                   if (overflows && firstCutOffIndex === -1) {
                     firstCutOffIndex = sentenceIndex
                     cutOffFound = true
-                    console.debug(`[BookPage] 🚨 BOTTOM OVERFLOW at subtitle ${sentenceIndex} (elRef ${elementIndex}):`, {
-                      sentenceNo: sentences[sentenceIndex].sentenceNo,
-                      text: sentences[sentenceIndex].en,
-                      overflowBy: Math.round(sentenceBottom - containerBottom) + 'px'
-                    })
+                    console.debug(
+                      `[BookPage] 🚨 BOTTOM OVERFLOW at subtitle ${sentenceIndex} (elRef ${elementIndex}):`,
+                      {
+                        sentenceNo: sentences[sentenceIndex].sentenceNo,
+                        text: sentences[sentenceIndex].en,
+                        overflowBy: Math.round(sentenceBottom - containerBottom) + 'px',
+                      }
+                    )
                     break
                   }
                 } else {
-                  console.debug(`[BookPage] ⚠️ No element ref for subtitle ${sentenceIndex} (elRef ${elementIndex})`)
+                  console.debug(
+                    `[BookPage] ⚠️ No element ref for subtitle ${sentenceIndex} (elRef ${elementIndex})`
+                  )
                 }
-                
+
                 sentenceIndex++
               }
             }
-            
+
             // If we found overflowing content, trim it
             if (cutOffFound && firstCutOffIndex > 0) {
               const originalLength = sentences.length
               const heldSentences = sentences.slice(firstCutOffIndex)
               sentences = sentences.slice(0, firstCutOffIndex)
-              
+
               // Update pagination state
               const lastIncluded = sentences[sentences.length - 1]
-              lastEnd = lastIncluded.sentenceNo ?? (currentStart + sentences.length - 1)
+              lastEnd = lastIncluded.sentenceNo ?? currentStart + sentences.length - 1
               const heldSentenceNo = heldSentences[0].sentenceNo ?? firstCutOffIndex
               canNext = true
-              
+
               console.debug('[BookPage] ✂️ TRIMMED OVERFLOW SENTENCES:', {
                 originalCount: originalLength,
                 keptCount: sentences.length,
                 trimmedCount: heldSentences.length,
                 lastDisplayedSentenceNo: lastEnd,
                 firstHeldSentenceNo: heldSentenceNo,
-                trimmedSentences: heldSentences.map(s => `${s.sentenceNo}: "${s.en.substring(0, 30)}..."`),
+                trimmedSentences: heldSentences.map(
+                  (s) => `${s.sentenceNo}: "${s.en.substring(0, 30)}..."`
+                ),
               })
-              
+
               // Force a re-render to ensure the trimmed sentences are removed
               await tick()
             } else {
@@ -332,7 +399,8 @@
     } finally {
       loading = false
       lastLoadCompletedAt = Date.now()
-      if (sentences.length > 0) pageCache.set(currentStart, { sentences: sentences.slice(), endSentenceNo: lastEnd })
+      if (sentences.length > 0)
+        pageCache.set(currentStart, { sentences: sentences.slice(), endSentenceNo: lastEnd })
     }
   }
 
@@ -372,7 +440,7 @@
     // Fire sentence translation open log (first time only)
     if (isNew) {
       const s = sentences[i]
-  const _sentenceNo = s?.sentenceNo ?? i // currently unused; kept for potential future feedback extension
+      const _sentenceNo = s?.sentenceNo ?? i // currently unused; kept for potential future feedback extension
       // Fire-and-forget; swallow errors to avoid test noise / UI disruption
       void logOpenJapanese(
         (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
@@ -420,8 +488,10 @@
         userRate ?? 0,
         wordValue
       )
-    } catch { /* ignore word log */ }
-  showWordTooltip(i, idx)
+    } catch {
+      /* ignore word log */
+    }
+    showWordTooltip(i, idx)
   }
 
   // CONTEXT MENU (right-click) -> toggle sentence translation bubble (flipped)
@@ -458,9 +528,13 @@
         suppressClickForSentence = i // suppress immediate word selection after releasing
         lastLongPressAt = Date.now()
         touchPresses[i].triggered = true
-        try { window.getSelection()?.removeAllRanges() } catch { /* ignore selection */ }
+        try {
+          window.getSelection()?.removeAllRanges()
+        } catch {
+          /* ignore selection */
+        }
         console.debug('[BookPage] touch long-press sentence translation', { sentenceIndex: i })
-      }, LONG_PRESS_TOUCH_MS)
+      }, LONG_PRESS_TOUCH_MS),
     }
   }
 
@@ -485,7 +559,11 @@
     delete touchPresses[i]
     if (wasTriggered) {
       // prevent any stray selection
-  try { window.getSelection()?.removeAllRanges() } catch { /* ignore selection */ }
+      try {
+        window.getSelection()?.removeAllRanges()
+      } catch {
+        /* ignore selection */
+      }
       e.preventDefault?.()
     }
   }
@@ -506,17 +584,17 @@
   }
 
   function pickWordByRatio(i: number, e: PointerEvent): number | undefined {
-  const spanEl = elRefs[i]
-  if (!spanEl) return undefined
-  const wordEls = Array.from(spanEl.querySelectorAll('span.word')) as HTMLElement[]
-  if (wordEls.length === 0) return undefined
-  const rect = spanEl.getBoundingClientRect()
-  const x = Math.min(Math.max(0, e.clientX - rect.left), rect.width)
-  const ratio = rect.width > 0 ? x / rect.width : 0
-  const idx = Math.min(wordEls.length - 1, Math.max(0, Math.floor(ratio * wordEls.length)))
-  const target = wordEls[idx]
-  if (target && target.dataset.wi) return Number(target.dataset.wi)
-  return undefined
+    const spanEl = elRefs[i]
+    if (!spanEl) return undefined
+    const wordEls = Array.from(spanEl.querySelectorAll('span.word')) as HTMLElement[]
+    if (wordEls.length === 0) return undefined
+    const rect = spanEl.getBoundingClientRect()
+    const x = Math.min(Math.max(0, e.clientX - rect.left), rect.width)
+    const ratio = rect.width > 0 ? x / rect.width : 0
+    const idx = Math.min(wordEls.length - 1, Math.max(0, Math.floor(ratio * wordEls.length)))
+    const target = wordEls[idx]
+    if (target && target.dataset.wi) return Number(target.dataset.wi)
+    return undefined
   }
 
   function reassignWordHighlights() {
@@ -524,23 +602,26 @@
     const clone: Record<number, Set<number>> = {}
     for (const k in wordHighlights) clone[k] = new Set(wordHighlights[k])
     wordHighlights = clone
-    console.debug('[BookPage] wordHighlights state (multiple)', Object.fromEntries(Object.entries(wordHighlights).map(([k,v]) => [k, Array.from(v)])))
+    console.debug(
+      '[BookPage] wordHighlights state (multiple)',
+      Object.fromEntries(Object.entries(wordHighlights).map(([k, v]) => [k, Array.from(v)]))
+    )
   }
 
   function clearSelections() {
     // Sentences
     selected = new Set()
     bubbleVisible = new Set()
-  // No sentence bubble timers anymore (persistent translations)
+    // No sentence bubble timers anymore (persistent translations)
     // Word highlights
-  wordHighlights = {}
-  wordTooltipWordIndex = {}
+    wordHighlights = {}
+    wordTooltipWordIndex = {}
     // Word tooltips & timers
-    wordTooltipTimers.forEach(id => window.clearTimeout(id))
+    wordTooltipTimers.forEach((id) => window.clearTimeout(id))
     wordTooltipTimers.clear()
     wordTooltipVisible = {}
     // Touch long-press state
-    Object.values(touchPresses).forEach(p => p.timer && window.clearTimeout(p.timer))
+    Object.values(touchPresses).forEach((p) => p.timer && window.clearTimeout(p.timer))
     for (const k in touchPresses) delete touchPresses[k]
     // Force reactivity for anything mutated
     reassignWordHighlights()
@@ -554,11 +635,13 @@
     if (existing) window.clearTimeout(existing)
     if (wordIdx !== undefined) wordTooltipWordIndex[i] = wordIdx
     wordTooltipVisible[i] = true
-  // force reactive update
-  wordTooltipVisible = { ...wordTooltipVisible }
+    // force reactive update
+    wordTooltipVisible = { ...wordTooltipVisible }
     // schedule hide
     const id = window.setTimeout(() => hideWordTooltip(i), WORD_TOOLTIP_MS)
     wordTooltipTimers.set(i, id)
+    // next frame adjust position to avoid clipping
+    requestAnimationFrame(() => adjustWordTooltipPosition(i))
   }
 
   function hideWordTooltip(i: number) {
@@ -575,12 +658,49 @@
     if (loading) return
     const prevRate = userRate ?? 0
     userRate = Math.max(0, prevRate - 300)
-  try { localStorage.setItem(rateStorageKey(bookId), String(userRate)) } catch { /* ignore persist */ }
+    try {
+      localStorage.setItem(rateStorageKey(bookId), String(userRate))
+    } catch {
+      /* ignore persist */
+    }
     console.debug('[BookPage] 難しい pressed: lowering rate', { previous: prevRate, new: userRate })
-  // Log difficult button press with previous rate (state before adjustment)
-  void logDifficultBtn((typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous', prevRate).catch(() => {})
+    // Log difficult button press with previous rate (state before adjustment)
+    void logDifficultBtn(
+      (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
+      prevRate
+    ).catch(() => {})
     // Re-load current page with same start & charCount using updated rate (force fresh fetch)
     await loadPage(currentStart, charCountForRequest, false)
+  }
+
+  // Ensure tooltip stays within viewport / reader container
+  function adjustWordTooltipPosition(sentenceIdx: number) {
+    const container = document.querySelector('article.reader') as HTMLElement | null
+    if (!container) return
+    const wordIdx = wordTooltipWordIndex[sentenceIdx]
+    if (wordIdx == null) return
+    const sentenceEl = elRefs[sentenceIdx]
+    if (!sentenceEl) return
+    const wordEl = sentenceEl.querySelector(`span.word[data-wi="${wordIdx}"]`) as HTMLElement | null
+    if (!wordEl) return
+    const tip = wordEl.querySelector('.word-tooltip') as HTMLElement | null
+    if (!tip) return
+    // Reset modifier classes
+    tip.classList.remove('pos-left', 'pos-right', 'pos-flip')
+    const tipRect = tip.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const padding = 4
+    // Horizontal overflow check
+    if (tipRect.left < containerRect.left + padding) {
+      tip.classList.add('pos-left')
+    } else if (tipRect.right > containerRect.right - padding) {
+      tip.classList.add('pos-right')
+    }
+    // Vertical (if not enough space above, flip below)
+    if (tipRect.top < containerRect.top + 4) {
+      tip.classList.add('pos-flip')
+    }
+    // If flipped below, adjust transform via CSS class
   }
 
   function showBubble(i: number) {
@@ -601,7 +721,9 @@
         const num = Number(stored)
         if (!Number.isNaN(num)) userRate = num
       }
-  } catch { /* ignore localStorage */ }
+    } catch {
+      /* ignore localStorage */
+    }
     // Ensure the .reader element exists in the DOM so we can measure it.
     await tick()
     await new Promise((r) => requestAnimationFrame(() => r(undefined)))
@@ -635,7 +757,9 @@
   })
 
   // Build book-like blocks: paragraphs of text and standalone subtitles
-  type Block = { kind: 'paragraph'; idxStart: number; idxEnd: number; items: Sentence[] } | { kind: 'subtitle'; item: Sentence; idx: number }
+  type Block =
+    | { kind: 'paragraph'; idxStart: number; idxEnd: number; items: Sentence[] }
+    | { kind: 'subtitle'; item: Sentence; idx: number }
   function buildBlocks(list: Sentence[]): Block[] {
     const blocks: Block[] = []
     let idxStart = -1
@@ -644,7 +768,12 @@
       const s = list[i]
       if (s.type === 'subtitle') {
         if (acc.length > 0) {
-          blocks.push({ kind: 'paragraph', idxStart, idxEnd: idxStart + acc.length - 1, items: acc.slice() })
+          blocks.push({
+            kind: 'paragraph',
+            idxStart,
+            idxEnd: idxStart + acc.length - 1,
+            items: acc.slice(),
+          })
           acc = []
           idxStart = -1
         }
@@ -655,69 +784,36 @@
       }
     }
     if (acc.length > 0 && idxStart !== -1) {
-      blocks.push({ kind: 'paragraph', idxStart, idxEnd: idxStart + acc.length - 1, items: acc.slice() })
+      blocks.push({
+        kind: 'paragraph',
+        idxStart,
+        idxEnd: idxStart + acc.length - 1,
+        items: acc.slice(),
+      })
     }
     return blocks
   }
 
-  // function paginateByWords(sentencesList: Sentence[], wordsPerPg: number) {
-  //   if (!wordsPerPg || wordsPerPg < 1) return [sentencesList]
-  //   const pages: Sentence[][] = []
-  //   let current: Sentence[] = []
-  //   let count = 0
-  //   for (const s of sentencesList) {
-  //     const w = (s.en || '').split(/\s+/).filter(Boolean).length
-  //     if (count + w > wordsPerPg && current.length > 0) {
-  //       pages.push(current)
-  //       current = []
-  //       count = 0
-  //     }
-
-  //     if (w > wordsPerPg) {
-  //       // split long sentence into multiple chunks of wordsPerPg
-  //       const words = (s.en || '').split(/\s+/).filter(Boolean)
-  //       for (let k = 0; k < words.length; k += wordsPerPg) {
-  //         const chunkWords = words.slice(k, k + wordsPerPg)
-  //         const chunkText = chunkWords.join(' ')
-  //         const chunkSentence: Sentence = {
-  //           type: s.type,
-  //           en: chunkText,
-  //           jp: s.jp,
-  //           level: s.level,
-  //         }
-  //         pages.push([chunkSentence])
-  //       }
-  //       count = 0
-  //       continue
-  //     }
-
-  //     current.push(s)
-  //     count = count + w
-  //   }
-  //   if (current.length) pages.push(current)
-  //   return pages
-  // }
-
   $: blocks = buildBlocks(sentences)
   // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
-  $: headerTitle = "CHAPTER I. Down the Rabbit-Hole";
+  $: headerTitle = 'CHAPTER I. Down the Rabbit-Hole'
   $: rateDisplay = userRate !== null ? userRate : '—'
 
   // Escape util
-  function esc(t: string) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
-  // Produce list of word tokens (letters/digits with internal hyphens). Hyphens allowed only inside words.
-  function extractWordTokens(text: string): string[] {
-    const words: string[] = []
-    const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g
-    let m: RegExpExecArray | null
-    while ((m = re.exec(text)) !== null) {
-      words.push(m[0])
-    }
-    return words
+  function esc(t: string) {
+    return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   }
-  function formatSentence(t: string): string { return t.replace(/\s+/g,' ').trim() }
+  function formatSentence(t: string): string {
+    return t.replace(/\s+/g, ' ').trim()
+  }
   // Render sentence where only word tokens (letters/digits + internal hyphens) become selectable spans.
-  function renderSentenceHTML(i: number, s: Sentence, highlightSet?: Set<number>, tooltipVisible?: boolean, tooltipWordIdx?: number): string {
+  function renderSentenceHTML(
+    i: number,
+    s: Sentence,
+    highlightSet?: Set<number>,
+    tooltipVisible?: boolean,
+    tooltipWordIdx?: number
+  ): string {
     const raw = formatSentence(s.en)
     const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g
     let last = 0
@@ -733,7 +829,11 @@
       const isHighlighted = !!highlightSet && highlightSet.has(wi)
       const cls = isHighlighted ? 'word word-highlight' : 'word'
       if (isHighlighted && tooltipVisible && wi === tooltipWordIdx) {
-        out.push(`<span class="${cls}" data-wi="${wi}">${esc(word)}<span class=\"word-tooltip\" aria-label=\"Placeholder translation\">Translation unavailable</span></span>`)
+        const jpWord = s.jp_word?.[wi]
+        const tip = jpWord && jpWord.trim() !== '' ? esc(jpWord) : 'Translation unavailable'
+        out.push(
+          `<span class="${cls}" data-wi="${wi}">${esc(word)}<span class="word-tooltip" aria-label="Japanese translation">${tip}</span></span>`
+        )
       } else {
         out.push(`<span class="${cls}" data-wi="${wi}">${esc(word)}</span>`)
       }
@@ -747,16 +847,42 @@
 
 <main class="bookpage">
   <header class="topbar">
-    <Button class="btn btn-ghost backBtn" type="button" variant="outline" aria-label="Go back" onclick={() => window.history.back()}>
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="15 18 9 12 15 6"/>
+    <Button
+      class="btn btn-ghost backBtn"
+      type="button"
+      variant="outline"
+      aria-label="Go back"
+      onclick={() => window.history.back()}
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="15 18 9 12 15 6" />
       </svg>
     </Button>
     <h2 class="title" title={headerTitle}>{headerTitle}</h2>
     <div class="actions">
-  <button class="btn btn-primary difficultBtn" type="button" aria-label="Mark difficult" disabled={loading} on:click={handleDifficult}>難しい</button>
+      <button
+        class="btn btn-primary difficultBtn"
+        type="button"
+        aria-label="Mark difficult"
+        disabled={loading}
+        on:click={handleDifficult}>難しい</button
+      >
     </div>
   </header>
+  <p class="interaction-help" aria-label="Usage help">
+    クリックで単語表示、長押しで文章の意味を表示
+  </p>
 
   {#if loading}
     <section class="book-text">
@@ -791,12 +917,24 @@
                     on:pointermove={(e) => touchPointerMove(b.idxStart + j, e)}
                     on:pointerup={(e) => touchPointerUp(b.idxStart + j, e)}
                     on:keydown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSentence(b.idxStart + j) }
-                      if (e.key === 'Escape') { e.preventDefault(); hideBubble(b.idxStart + j) }
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        toggleSentence(b.idxStart + j)
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        hideBubble(b.idxStart + j)
+                      }
                     }}
                     aria-pressed={selected.has(b.idxStart + j)}
                   >
-                    {@html renderSentenceHTML(b.idxStart + j, s, wordHighlights[b.idxStart + j], wordTooltipVisible[b.idxStart + j], wordTooltipWordIndex[b.idxStart + j])}
+                    {@html renderSentenceHTML(
+                      b.idxStart + j,
+                      s,
+                      wordHighlights[b.idxStart + j],
+                      wordTooltipVisible[b.idxStart + j],
+                      wordTooltipWordIndex[b.idxStart + j]
+                    )}
                   </span>
                   {#if bubbleVisible.has(b.idxStart + j)}
                     <span class="jp-translation" aria-label="Japanese translation">{s.jp}</span>
@@ -825,13 +963,17 @@
 </main>
 
 <style>
-  .bookpage { max-width: 800px; margin: 2rem auto; padding: 1rem; }
+  .bookpage {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 1rem;
+  }
   .topbar {
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: .5rem;
-    margin-bottom: .75rem;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
   }
   .actions { display: flex; gap: .5rem; align-items: center; }
   :global(.btn) { height: 2rem; padding: 0 .5rem; border-radius: 8px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: .25rem; }
@@ -845,9 +987,13 @@
   :global(.btn) .icon { display: inline-flex; align-items: center; line-height: 1; }
   :global(.btn) .btn-label { display: inline-flex; align-items: center; }
 
-  .error { color: #b00020; }
+  .error {
+    color: #b00020;
+  }
 
-  .book-text { margin-top: 0.5rem; }
+  .book-text {
+    margin-top: 0.5rem;
+  }
   .reader {
     font-family: Georgia, 'Times New Roman', serif;
     font-size: 1.1rem;
@@ -857,41 +1003,75 @@
     border: 1px solid #eceff3;
     border-radius: 12px;
     padding: 1.25rem 1.25rem 1.5rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     max-height: 75vh;
-    overflow:scroll;
-  word-break: normal;
-  overflow-wrap: anywhere;
-  hyphens: auto;
+    overflow: scroll;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
   /* Subtitle now shown in topbar title */
-  .sentence.skeleton { background: #f2f4f8; overflow: hidden; }
-  .skeleton-line {
-    height: 12px; border-radius: 6px; background: linear-gradient(90deg, #e9edf3 25%, #f5f7fb 50%, #e9edf3 75%);
-    background-size: 200% 100%; animation: shimmer 1.2s infinite;
+  .sentence.skeleton {
+    background: #f2f4f8;
+    overflow: hidden;
   }
-  .w-90 { width: 90%; }
-  .w-60 { width: 60%; }
-  .mt-6 { margin-top: 6px; }
-  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .skeleton-line {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #e9edf3 25%, #f5f7fb 50%, #e9edf3 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s infinite;
+  }
+  .w-90 {
+    width: 90%;
+  }
+  .w-60 {
+    width: 60%;
+  }
+  .mt-6 {
+    margin-top: 6px;
+  }
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
   .sentenceInline {
     all: unset;
     display: inline;
     position: relative;
     cursor: pointer;
     border-radius: 4px;
-    padding: 0 .04em;
+    padding: 0 0.04em;
     box-decoration-break: clone;
     /* Allow native text selection */
     -webkit-touch-callout: none;
   }
   /* add a natural space after each sentence inline element */
-  .sentenceInline::after { content: ' '; }
+  .sentenceInline::after {
+    content: ' ';
+  }
   /* but not after the last sentence in a paragraph */
-  .reader p > .sentenceInline:last-child::after { content: ''; }
-  .sentenceInline.selected { background: #ffe9a8; }
-  .sentenceInline:focus-visible { outline: 2px solid rgba(100,150,250,.55); outline-offset: 2px; }
-  .jp-translation { display: block; font-size: .7rem; color: #0a56ad; margin: .15rem 0 .4rem .25rem; line-height: 1.2; }
+  .reader p > .sentenceInline:last-child::after {
+    content: '';
+  }
+  .sentenceInline.selected {
+    background: #ffe9a8;
+  }
+  .sentenceInline:focus-visible {
+    outline: 2px solid rgba(100, 150, 250, 0.55);
+    outline-offset: 2px;
+  }
+  .jp-translation {
+    display: block;
+    font-size: 0.7rem;
+    color: #0a56ad;
+    margin: 0.15rem 0 0.4rem 0.25rem;
+    line-height: 1.2;
+  }
 
   .pagination {
     display: flex;
@@ -900,21 +1080,36 @@
     gap: 1rem;
     margin-top: 1rem;
   }
-  .interaction-help { font-size: .7rem; color: #666; margin: .75rem 0 0; text-align: center; }
-  .pagination .page-info { color: #444; font-size: .95rem; }
-  .pagination .rate { margin-left: .5rem; }
-  :global(.word) { cursor: pointer; word-break: break-word; }
+  .interaction-help {
+    font-size: 0.7rem;
+    color: #666;
+    margin: 0.75rem 0 0;
+    text-align: center;
+  }
+  .pagination .page-info {
+    color: #444;
+    font-size: 0.95rem;
+  }
+  .pagination .rate {
+    margin-left: 0.5rem;
+  }
+  :global(.word) {
+    cursor: pointer;
+    word-break: break-word;
+  }
   :global(.word-highlight) {
     background: #e0f0ff;
     color: #0a56ad !important;
     border-radius: 3px;
-    padding: 0 .05em;
-    box-shadow: 0 0 0 1px rgba(0,0,0,.10);
+    padding: 0 0.05em;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
     font-weight: 600;
     text-decoration: underline 2px solid #0a56ad;
     text-underline-offset: 2px;
   }
-  :global(.word-highlight) { position: relative; }
+  :global(.word-highlight) {
+    position: relative;
+  }
   :global(.word-tooltip) {
     position: absolute;
     left: 50%;
@@ -922,13 +1117,26 @@
     transform: translate(-50%, -4px);
     background: #232f3e;
     color: #fff;
-    font-size: .65rem;
+    font-size: 0.65rem;
     line-height: 1.2;
     padding: 2px 4px;
     border-radius: 4px;
     white-space: nowrap;
-    box-shadow: 0 2px 4px rgba(0,0,0,.15);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
     pointer-events: none;
     z-index: 2;
+  }
+  :global(.word-tooltip.pos-left) {
+    left: 0%;
+    transform: translate(0, -4px);
+  }
+  :global(.word-tooltip.pos-right) {
+    left: 100%;
+    transform: translate(-100%, -4px);
+  }
+  :global(.word-tooltip.pos-flip) {
+    bottom: auto;
+    top: 100%;
+    transform: translate(-50%, 4px);
   }
 </style>

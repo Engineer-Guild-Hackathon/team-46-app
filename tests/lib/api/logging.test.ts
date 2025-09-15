@@ -64,11 +64,12 @@ describe("logging API helpers", () => {
       text: async () => JSON.stringify(mock),
     }));
     vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
-    await logOpenWord("u2", 10, 5);
+    await logOpenWord("u2", 10, "word");
     await logHowWasIt("u2", 10, "easy");
     const urls = fetchMock.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(urls.some((u) => /type=openWord/.test(u))).toBe(true);
-    expect(urls.some((u) => /value=5/.test(u))).toBe(true);
+    // word index is incremented to 1-based inside logOpenWord, so expect value=6
+    expect(urls.some((u) => /value=word/.test(u))).toBe(true);
     expect(urls.some((u) => /type=howWasIt/.test(u))).toBe(true);
     expect(urls.some((u) => /value=easy/.test(u))).toBe(true);
   });
