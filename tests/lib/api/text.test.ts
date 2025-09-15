@@ -34,7 +34,7 @@ describe("getTextPage", () => {
 
     const res = await getTextPage({ bookId: "BookA" });
     expect(res).toEqual(mock);
-    const url = String((fetchMock.mock.calls as any)[0][0]);
+    const url = String((fetchMock.mock.calls as unknown)[0][0]);
     expect(url).toMatch(/bookId=BookA/);
     expect(url).toMatch(/startSentenceNo=0/); // default
     expect(url).toMatch(/charCount=800/); // default
@@ -66,7 +66,7 @@ describe("getTextPage", () => {
       rate: 777,
     });
 
-    const url = String((fetchMock.mock.calls as any)[0][0]);
+    const url = String((fetchMock.mock.calls as unknown)[0][0]);
     expect(url).toMatch(/bookId=B2/);
     expect(url).toMatch(/startSentenceNo=10/);
     expect(url).toMatch(/userId=u123/);
