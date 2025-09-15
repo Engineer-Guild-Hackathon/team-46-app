@@ -669,6 +669,8 @@
       (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
       prevRate
     ).catch(() => {})
+
+    clearSelections()
     // Re-load current page with same start & charCount using updated rate (force fresh fetch)
     await loadPage(currentStart, charCountForRequest, false)
   }
