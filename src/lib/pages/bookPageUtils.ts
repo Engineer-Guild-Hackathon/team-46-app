@@ -93,12 +93,15 @@ export function selectWordAtPointer(
 ): number | undefined {
   if (!spanEl) return undefined;
   const el = document.elementFromPoint(e.clientX, e.clientY);
+  // Only select when the event target (or its closest ancestor) is a
+  // `.word` span. Avoid heuristic fallback by ratio because clicks on
+  // punctuation or whitespace should not select a nearby word.
   if (el && spanEl.contains(el)) {
-    const candidate = (el.closest("span.word") || el) as HTMLElement;
+    const candidate = el.closest("span.word") as HTMLElement | null;
     if (candidate && candidate.dataset?.wi !== undefined) {
       const idx = Number(candidate.dataset.wi);
       if (!Number.isNaN(idx)) return idx;
     }
   }
-  return pickWordByRatio(spanEl, e);
+  return undefined;
 }

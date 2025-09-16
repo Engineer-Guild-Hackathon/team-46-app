@@ -354,6 +354,16 @@
     }
   }
 
+  // Cancel all pending touch long-press timers (used when the user scrolls or
+  // moves substantially so we don't accidentally trigger long-press behavior)
+  function cancelAllTouchPresses() {
+    for (const k in touchPresses) {
+      const t = touchPresses[k];
+      if (t && t.timer) window.clearTimeout(t.timer);
+      delete touchPresses[Number(k)];
+    }
+  }
+
   function selectWordAtPointer(i: number, e: PointerEvent) {
     const spanEl = elRefs[i];
     return selectWordAtPointerHelper(spanEl, e);
@@ -520,6 +530,10 @@
       updateScrollProgressDebounced();
       // also update subtitle header on scroll
       readerEl.addEventListener("scroll", updateCurrentSubtitleDebounced, {
+        passive: true,
+      });
+      // cancel any pending touch long-press timers when the user scrolls
+      readerEl.addEventListener("scroll", cancelAllTouchPresses, {
         passive: true,
       });
     }
@@ -826,6 +840,7 @@
                         touchPointerDown(b.idxStart + j, e)}
                       on:pointermove={(e) =>
                         touchPointerMove(b.idxStart + j, e)}
+                      on:touchmove={() => cancelAllTouchPresses()}
                       on:pointerup={(e) => touchPointerUp(b.idxStart + j, e)}
                       on:keydown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -849,7 +864,7 @@
                     </span>
                     {#if bubbleVisible.has(b.idxStart + j)}
                       <span
-                        class="jp-translation block text-[0.7rem] text-[#0a56ad] mt-1 ml-1 leading-[1.2]"
+                        class="jp-translation block text-[0.9rem] text-[#0a56ad] mt-1 ml-1 leading-[1.2]"
                         aria-label="Japanese translation">{s.jp}</span
                       >
                     {/if}
