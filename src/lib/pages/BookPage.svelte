@@ -499,7 +499,8 @@
   // trigger earlier: ~8 lines from bottom to be ~4-5 lines higher than previous behavior
   const LINES_FROM_BOTTOM = 8
   const EXTRA_TRIGGER_PX = 12
-  const SCROLL_TRIGGER_COOLDOWN_MS = 800
+  // increase cooldown so rapid up/down scrolls don't cause duplicate loads
+  const SCROLL_TRIGGER_COOLDOWN_MS = 2500
   let _lastScrollTriggerAt = 0
 
   function checkAndLoadNearBottom() {
