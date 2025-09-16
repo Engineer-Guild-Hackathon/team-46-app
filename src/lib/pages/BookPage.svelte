@@ -9,9 +9,15 @@
     level?: string
     sentenceNo?: number
   }
-  import { computeWordsPerPage, observeWordsPerPage } from '../hooks/useWordsPerPage'
   import { getTextPage } from '$lib/api/text'
-  import { ChevronLeft, ChevronRight } from '@lucide/svelte'
+  import {
+    renderSentenceHTML,
+    esc,
+    formatSentence,
+    selectWordAtPointer as selectWordAtPointerHelper,
+    pickWordByRatio as pickWordByRatioHelper,
+  } from '$lib/pages/bookPageUtils'
+  import { ChevronLeft } from '@lucide/svelte'
   import Button from '$lib/components/ui/button/button.svelte'
   import { logOpenJapanese, logDifficultBtn, logOpenWord } from '$lib/api/logging'
 
@@ -66,7 +72,6 @@
     if (start === 0) sentences = []
     // clear transient word render cache (recomputed lazily)
     try {
-      let apiTextLength = 0
       // Compute telemetry: seconds since last completed page load
       const timeSec = lastLoadCompletedAt
         ? Math.max(0, Math.round((Date.now() - lastLoadCompletedAt) / 1000))
@@ -134,7 +139,6 @@
         if (newSentences.length > 0) {
           lastEnd = res.endSentenceNo
         }
-        apiTextLength = newSentences.length
       // Important: render the reader content now so measurement can find it
       loading = false
 
@@ -189,7 +193,7 @@
     showBubble(i)
   }
 
-  // LEFT CLICK -> select / toggle word highlight (flipped behavior)
+  // LEFT CLICK -> select / toggle word highlight
   function handleClick(i: number, e: MouseEvent) {
     if (e.button !== 0) return
     // If a long-press just triggered sentence translation, suppress immediate word selection
@@ -308,31 +312,12 @@
 
   function selectWordAtPointer(i: number, e: PointerEvent) {
     const spanEl = elRefs[i]
-    if (!spanEl) return
-    const el = document.elementFromPoint(e.clientX, e.clientY)
-    if (el && spanEl.contains(el)) {
-      const candidate = (el.closest('span.word') || el) as HTMLElement
-      if (candidate && candidate.dataset?.wi !== undefined) {
-        const idx = Number(candidate.dataset.wi)
-        if (!Number.isNaN(idx)) return idx
-      }
-    }
-    // Fallback ratio method across only word spans
-    return pickWordByRatio(i, e)
+    return selectWordAtPointerHelper(spanEl, e)
   }
 
   function pickWordByRatio(i: number, e: PointerEvent): number | undefined {
     const spanEl = elRefs[i]
-    if (!spanEl) return undefined
-    const wordEls = Array.from(spanEl.querySelectorAll('span.word')) as HTMLElement[]
-    if (wordEls.length === 0) return undefined
-    const rect = spanEl.getBoundingClientRect()
-    const x = Math.min(Math.max(0, e.clientX - rect.left), rect.width)
-    const ratio = rect.width > 0 ? x / rect.width : 0
-    const idx = Math.min(wordEls.length - 1, Math.max(0, Math.floor(ratio * wordEls.length)))
-    const target = wordEls[idx]
-    if (target && target.dataset.wi) return Number(target.dataset.wi)
-    return undefined
+    return pickWordByRatioHelper(spanEl, e)
   }
 
   function reassignWordHighlights() {
@@ -344,27 +329,6 @@
       '[BookPage] wordHighlights state (multiple)',
       Object.fromEntries(Object.entries(wordHighlights).map(([k, v]) => [k, Array.from(v)]))
     )
-  }
-
-  function clearSelections() {
-    // Sentences
-    selected = new Set()
-    bubbleVisible = new Set()
-    // No sentence bubble timers anymore (persistent translations)
-    // Word highlights
-    wordHighlights = {}
-    wordTooltipWordIndex = {}
-    // Word tooltips & timers
-    wordTooltipTimers.forEach((id) => window.clearTimeout(id))
-    wordTooltipTimers.clear()
-    wordTooltipVisible = {}
-    // Touch long-press state
-    Object.values(touchPresses).forEach((p) => p.timer && window.clearTimeout(p.timer))
-    for (const k in touchPresses) delete touchPresses[k]
-    // Force reactivity for anything mutated
-    reassignWordHighlights()
-    wordTooltipVisible = { ...wordTooltipVisible }
-    console.debug('[BookPage] selections cleared on page change')
   }
 
   function showWordTooltip(i: number, wordIdx?: number) {
@@ -408,7 +372,6 @@
       prevRate
     ).catch(() => {})
 
-  clearSelections()
   // Re-load current page with same start & charCount using updated rate (force fresh fetch)
   await loadPage(currentStart)
   }
@@ -464,41 +427,6 @@
     } catch {
       /* ignore localStorage */
     }
-    // Ensure the .reader element exists in the DOM so we can measure it.
-    await tick()
-    await new Promise((r) => requestAnimationFrame(() => r(undefined)))
-
-    if (!readerEl) {
-      readerEl = document.querySelector('.reader') as HTMLElement | null
-    }
-
-    // compute initial words-per-page based on reader element (or body fallback)
-    // NOTE: Simplified algorithm (binary search word count for one line * number of lines).
-    // Passing lineHeight to keep estimation stable when styles change.
-    if (readerEl) {
-      wordsPerPage = computeWordsPerPage(readerEl, { lineHeight: 1.7 }) || 0
-      console.debug('[wpp] initial wordsPerPage (reader) =', wordsPerPage)
-      // observe for container changes and update wordsPerPage (does not auto-reload)
-      const stop = observeWordsPerPage(
-        readerEl,
-        (n) => {
-          wordsPerPage = n || 0
-          console.debug('[wpp] wordsPerPage updated=', wordsPerPage)
-        },
-        { lineHeight: 1.7 }
-      )
-      onDestroy(() => stop && stop())
-    } else {
-      wordsPerPage = computeWordsPerPage(document.body, { lineHeight: 1.7 }) || 0
-      console.debug('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
-    }
-
-  // compute wordsPerPage but do not rely on estimated charCount; API will be requested with defaults
-  await loadPage(0)
-    // After initial load, enable canNext for infinite scroll if we received something
-    canNext = true
-    // Start intersection observer for sentinel
-    initInfiniteObserver()
   })
 
   // Intersection observer sentinel (bottom marker)
@@ -569,50 +497,7 @@
   $: headerTitle = 'CHAPTER I. Down the Rabbit-Hole'
   $: rateDisplay = userRate !== null ? userRate : '—'
 
-  // Escape util
-  function esc(t: string) {
-    return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  }
-  function formatSentence(t: string): string {
-    return t.replace(/\s+/g, ' ').trim()
-  }
-  // Render sentence where only word tokens (letters/digits + internal hyphens) become selectable spans.
-  function renderSentenceHTML(
-    i: number,
-    s: Sentence,
-    highlightSet?: Set<number>,
-    tooltipVisible?: boolean,
-    tooltipWordIdx?: number
-  ): string {
-    const raw = formatSentence(s.en)
-    const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g
-    let last = 0
-    let wi = 0
-    let out: string[] = []
-    let m: RegExpExecArray | null
-    while ((m = re.exec(raw)) !== null) {
-      if (m.index > last) {
-        // punctuation / spaces chunk
-        out.push(esc(raw.slice(last, m.index)))
-      }
-      const word = m[0]
-      const isHighlighted = !!highlightSet && highlightSet.has(wi)
-      const cls = isHighlighted ? 'word word-highlight' : 'word'
-      if (isHighlighted && tooltipVisible && wi === tooltipWordIdx) {
-        const jpWord = s.jp_word?.[wi]
-        const tip = jpWord && jpWord.trim() !== '' ? esc(jpWord) : 'Translation unavailable'
-        out.push(
-          `<span class="${cls}" data-wi="${wi}">${esc(word)}<span class="word-tooltip" aria-label="Japanese translation">${tip}</span></span>`
-        )
-      } else {
-        out.push(`<span class="${cls}" data-wi="${wi}">${esc(word)}</span>`)
-      }
-      wi++
-      last = m.index + word.length
-    }
-    if (last < raw.length) out.push(esc(raw.slice(last)))
-    return out.join('')
-  }
+  // sentence rendering and pointer helpers moved to `src/lib/pages/bookPageUtils.ts`
 </script>
 
 <main class="bookpage mx-auto max-w-[800px] my-8 p-4">
@@ -624,20 +509,7 @@
       aria-label="Go back"
       onclick={() => window.history.back()}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <polyline points="15 18 9 12 15 6" />
-      </svg>
+    <ChevronLeft class="w-5 h-5" />
     </Button>
   <h2 class="title text-[1.1rem] m-0 font-semibold" title={headerTitle}>{headerTitle}</h2>
   <div class="actions flex items-center gap-2">
