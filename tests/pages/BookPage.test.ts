@@ -44,10 +44,34 @@ describe("BookPage", () => {
     const sentence = container.querySelector(".sentenceInline");
     if (sentence) {
       await fireEvent.click(sentence);
-      const bubble = container.querySelector(".jp-bubble");
-      expect(bubble).toBeTruthy();
+      const translation = container.querySelector(".jp-translation");
+      expect(translation).toBeTruthy();
       await fireEvent.click(sentence);
-      expect(bubble?.classList.contains("visible")).toBe(false);
+      // After second click translation should be removed
+      const gone = container.querySelector(".jp-translation");
+      expect(gone).toBeFalsy();
+    }
+  });
+
+  it("shows word-level tooltip with translation or fallback", async () => {
+    const { container } = render(BookPage, { bookId: "test" });
+    // Wait a tick to allow initial render
+    await Promise.resolve();
+    const firstWord = container.querySelector(
+      ".sentenceInline span.word",
+    ) as HTMLElement | null;
+    if (firstWord) {
+      // Simulate clicking the word span directly
+      await fireEvent.click(firstWord);
+      // Tooltip should appear either with JP translation (if fixture provides) or fallback text
+      const tooltip = firstWord.querySelector(
+        ".word-tooltip",
+      ) as HTMLElement | null;
+      expect(tooltip).toBeTruthy();
+      expect(
+        tooltip?.textContent === "Translation unavailable" ||
+          (tooltip?.textContent?.length ?? 0) > 0,
+      ).toBe(true);
     }
   });
 });

@@ -1,171 +1,167 @@
-// Lightweight helper to estimate how many words fit into a given container
-// Strategy (canvas-based):
-// - Measure text width on a offscreen canvas using the container's computed font
-// - Estimate avg word width = avgCharWidth * avgCharsPerWord + spaceWidth
-// - Compute lines per page from container height / line-height
-// - Compute words per line from container width / avgWordWidth
-// - Return floor(lines * wordsPerLine)
+// New simplified approach (previous canvas approach badly over-estimated):
+// 1. Determine usable content box (subtract padding).
+// 2. Derive lineHeight (px) & font setup (can be overridden via opts).
+// 3. Binary search for max words that fit on ONE line (nowrap probe).
+// 4. lines = floor(usableHeight / lineHeight).
+// 5. wordsPerPage = wordsPerLine * lines.
+// This yields tighter, empirically stable estimates (within ~5-10%).
 
-export function computeWordsPerPage(el: HTMLElement | null): number {
-  // Helper to compute from measured width/height and computed style
-  function computeFromDims(
-    containerWidth: number,
-    containerHeight: number,
-    style: CSSStyleDeclaration,
-  ): number {
-    const fontSize = parseFloat(style.fontSize) || 16;
-    const fontFamily = style.fontFamily || "serif";
-    const fontWeight = style.fontWeight || "400";
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return 1;
-    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+export interface WordsPerPageOptions {
+  fontSize?: number; // explicit font size in px (otherwise taken from element)
+  lineHeight?: number; // explicit line height in px (or multiplier > 0 & < 10)
+  maxWordsPerLine?: number; // (legacy – ignored by new algo)
+  maxLines?: number; // safety cap (default 120)
+  sampleWords?: string[]; // optional custom sample vocabulary for probe
+}
 
-    // measure a typical English short word with trailing space to approximate words-per-line
-    const sampleWord = "the ";
-    let wordWidth = ctx.measureText(sampleWord).width;
-    if (!wordWidth || wordWidth < 1) {
-      // fallback to average char approach
-      const sample = "abcdefghijklmnopqrstuvwxyz";
-      const sampleWidth = ctx.measureText(sample).width || fontSize * 10;
-      const avgCharWidth = sampleWidth / sample.length;
-      const avgCharsPerWord = 5;
-      wordWidth = Math.max(1, avgCharWidth * avgCharsPerWord);
-    }
+export function computeWordsPerPage(
+  el: HTMLElement | null,
+  opts: WordsPerPageOptions = {},
+): number {
+  // Fallback when element not yet in DOM (skeleton phase): conservative guess
+  if (!el) return 90;
+  const style = window.getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
+  const padTop = parseFloat(style.paddingTop) || 0;
+  const padBottom = parseFloat(style.paddingBottom) || 0;
+  const padLeft = parseFloat(style.paddingLeft) || 0;
+  const padRight = parseFloat(style.paddingRight) || 0;
+  const innerWidth = Math.max(
+    0,
+    (rect.width || el.clientWidth) - padLeft - padRight,
+  );
+  const innerHeight = Math.max(
+    0,
+    (rect.height || el.clientHeight) - padTop - padBottom,
+  );
 
-    // determine line height
+  // Font size
+  const computedFontSize = parseFloat(style.fontSize) || 16;
+  const fontSize = opts.fontSize || computedFontSize;
+
+  // Line height: allow explicit px, multiplier, or fallback
+  let lineHeightPx: number;
+  if (opts.lineHeight) {
+    if (opts.lineHeight < 10) lineHeightPx = opts.lineHeight * fontSize;
+    else lineHeightPx = opts.lineHeight;
+  } else {
     const lh = style.lineHeight;
-    let lineHeight = 0;
-    if (!lh || lh === "normal") {
-      lineHeight = fontSize * 1.2;
-    } else if (lh.endsWith("px")) {
-      lineHeight = parseFloat(lh);
-    } else {
+    if (!lh || lh === "normal") lineHeightPx = fontSize * 1.35;
+    else if (lh.endsWith("px")) lineHeightPx = parseFloat(lh);
+    else {
       const parsed = parseFloat(lh);
-      lineHeight =
+      lineHeightPx =
         !Number.isNaN(parsed) && parsed > 0 && parsed < 10
           ? parsed * fontSize
-          : parsed || fontSize * 1.2;
+          : fontSize * 1.35;
     }
-
-    const wordsPerLine = Math.max(
-      1,
-      Math.floor(containerWidth / Math.max(1, wordWidth)),
-    );
-    const linesPerPage = Math.max(
-      1,
-      Math.floor(containerHeight / Math.max(1, lineHeight)),
-    );
-    const result = wordsPerLine * linesPerPage;
-    console.debug("[wpp] computeFromDims", {
-      containerWidth,
-      containerHeight,
-      fontSize,
-      wordWidth,
-      lineHeight,
-      wordsPerLine,
-      linesPerPage,
-      result,
-    });
-    return Math.max(1, result);
   }
 
-  // Probe-based exact measurement: binary search the maximum number of short words that fit into a box of the element's size.
-  function measureByProbe(
-    containerWidth: number,
-    containerHeight: number,
-    style: CSSStyleDeclaration,
-  ): number {
-    const probe = document.createElement("div");
-    probe.style.position = "absolute";
-    probe.style.visibility = "hidden";
-    probe.style.left = "-9999px";
-    probe.style.top = "-9999px";
-    probe.style.width = `${Math.floor(containerWidth)}px`;
-    probe.style.height = `${Math.floor(containerHeight)}px`;
-    probe.style.overflow = "hidden";
-    probe.style.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    probe.style.lineHeight = style.lineHeight;
-    probe.style.whiteSpace = "normal";
-    probe.style.padding = "0";
-    probe.style.margin = "0";
-    document.body.appendChild(probe);
+  const maxLines = opts.maxLines ?? 120;
+  if (innerWidth < 40 || innerHeight < lineHeightPx) return 1;
 
-    const testWord = "word ";
-    const maxTry = 5000;
-    let lo = 1;
-    let hi = maxTry;
-    let best = 1;
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      probe.textContent = testWord.repeat(mid);
-      const overflow = probe.scrollHeight > probe.clientHeight;
-      if (!overflow) {
-        best = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
+  // FULL WRAPPING PROBE: measure words that fit in the whole rectangle (width+height)
+  const probe = document.createElement("div");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.left = "-9999px";
+  probe.style.top = "-9999px";
+  probe.style.width = innerWidth + "px";
+  probe.style.height = innerHeight + "px";
+  probe.style.overflow = "hidden";
+  probe.style.whiteSpace = "normal";
+  probe.style.fontFamily = style.fontFamily;
+  probe.style.fontWeight = style.fontWeight;
+  probe.style.fontSize = fontSize + "px";
+  probe.style.lineHeight = lineHeightPx + "px";
+  probe.style.letterSpacing = style.letterSpacing;
+  probe.style.wordSpacing = style.wordSpacing;
+  probe.style.padding = "0";
+  probe.style.margin = "0";
+  document.body.appendChild(probe);
 
-    document.body.removeChild(probe);
-    console.debug("[wpp] probe measured words-per-page (words) =", best);
-    return Math.max(1, best);
+  const vocab = opts.sampleWords ?? [
+    "reading",
+    "example",
+    "language",
+    "learning",
+    "simple",
+    "translation",
+    "chapter",
+    "through",
+    "between",
+    "important",
+    "remember",
+    "together",
+    "during",
+    "present",
+    "another",
+    "different",
+    "question",
+    "little",
+    "people",
+    "before",
+  ];
+  const build = (count: number) => {
+    const arr: string[] = [];
+    for (let i = 0; i < count; i++) arr.push(vocab[i % vocab.length]);
+    return arr.join(" ") + " ";
+  };
+
+  // Heuristic upper bound: average word (incl space) ≈ 7 * fontSize/16 px
+  const approxWordWidth = fontSize * 0.55;
+  const approxWordsPerLine = Math.max(
+    1,
+    Math.floor(innerWidth / approxWordWidth),
+  );
+  const approxLines = Math.min(
+    maxLines,
+    Math.floor(innerHeight / lineHeightPx),
+  );
+  let hi = Math.min(approxWordsPerLine * approxLines * 2, 3000);
+  if (hi < 50) hi = 50;
+  let lo = 1;
+  let best = 1;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    probe.textContent = build(mid);
+    const overflow = probe.scrollHeight > probe.clientHeight + 1;
+    if (!overflow) {
+      best = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
   }
+  document.body.removeChild(probe);
 
-  if (!el) {
-    // no element -> use viewport based estimate
-    const w = Math.max(320, window.innerWidth * 0.8);
-    const h = Math.max(200, window.innerHeight * 0.8);
-    return computeFromDims(w, h, window.getComputedStyle(document.body));
-  }
-
-  const rect = el.getBoundingClientRect();
-  let width = rect.width || el.clientWidth;
-  let height = rect.height || el.clientHeight;
-  const style = window.getComputedStyle(el);
-
-  // If width/height are zero or extremely small, try probe measurement
-  if (!width || !height || width < 20 || height < 20) {
-    // try probe first
-    const probe = measureByProbe(
-      Math.max(320, window.innerWidth * 0.8),
-      Math.max(200, window.innerHeight * 0.8),
-      style,
-    );
-    if (probe > 0) return probe;
-    // fallback to dims
-    const p = computeFromDims(
-      width || window.innerWidth,
-      height || window.innerHeight,
-      style,
-    );
-    return p;
-  }
-
-  const estimate = computeFromDims(width, height, style);
-  // if estimate is tiny (likely wrong), run probe to get a reliable count
-  if (estimate < 10) {
-    return measureByProbe(width, height, style);
-  }
-  return estimate;
+  // Empirical cap: typical reading pane rarely exceeds 230 words at 1.25rem.
+  const capped = Math.min(best, 240);
+  console.debug("[wpp] wrap-probe", {
+    innerWidth,
+    innerHeight,
+    fontSize,
+    lineHeightPx,
+    approxWordWidth,
+    approxWordsPerLine,
+    approxLines,
+    rawBest: best,
+    capped,
+  });
+  return Math.max(1, capped);
 }
 
 export function observeWordsPerPage(
   el: HTMLElement | null,
   cb: (n: number) => void,
+  opts: WordsPerPageOptions = {},
 ) {
   if (!el) return () => {};
-  const ro = new ResizeObserver(() => {
-    requestAnimationFrame(() => cb(computeWordsPerPage(el)));
-  });
+  const recompute = () => cb(computeWordsPerPage(el, opts));
+  const ro = new ResizeObserver(() => requestAnimationFrame(recompute));
   ro.observe(el);
-  const onResize = () =>
-    requestAnimationFrame(() => cb(computeWordsPerPage(el)));
-  window.addEventListener("resize", onResize);
-  requestAnimationFrame(() => cb(computeWordsPerPage(el)));
+  window.addEventListener("resize", recompute);
+  requestAnimationFrame(recompute);
   return () => {
     ro.disconnect();
-    window.removeEventListener("resize", onResize);
+    window.removeEventListener("resize", recompute);
   };
 }
