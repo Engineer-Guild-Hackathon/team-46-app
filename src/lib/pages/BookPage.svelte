@@ -76,6 +76,9 @@
   let lastLongPressAt = 0;
   let _lastWordSelectionAt = 0;
   const elRefs: Record<number, HTMLElement | null> = {};
+  const subtitleRefs: Record<number, HTMLElement | null> = {};
+  let currentSubtitle: string | null = null;
+  let _subtitleUpdateTimer: number | null = null;
 
   /**
    * Fetch a page of sentences. start===0 replaces content; otherwise append.
@@ -515,6 +518,10 @@
       });
       // initial progress calc
       updateScrollProgressDebounced();
+      // also update subtitle header on scroll
+      readerEl.addEventListener("scroll", updateCurrentSubtitleDebounced, {
+        passive: true,
+      });
     }
     initInfiniteObserver();
   });
@@ -522,6 +529,8 @@
   onDestroy(() => {
     if (readerEl)
       readerEl.removeEventListener("scroll", updateScrollProgressDebounced);
+    if (readerEl)
+      readerEl.removeEventListener("scroll", updateCurrentSubtitleDebounced);
   });
 
   // Compute a conservative charCount based on viewport breakpoint sizing
@@ -639,6 +648,52 @@
   }
   onDestroy(() => observer && observer.disconnect());
 
+  // Update the currently visible subtitle (the latest subtitle whose element
+  // is within or above the top of the reader viewport). This keeps a sticky
+  // header aligned with the content beneath.
+  function updateCurrentSubtitle() {
+    if (!readerEl) return;
+    try {
+      // Find the last subtitle element that is not below the reader's top
+      const readerRect = readerEl.getBoundingClientRect();
+      let lastSubtitle: { idx: number; text: string } | null = null;
+      for (const b of blocks) {
+        if (b.kind !== "subtitle") continue;
+        const idx = b.idx;
+        const el = subtitleRefs[idx];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        // If the subtitle's top is less than or equal to the reader's top + 4px
+        // then it's considered at-or-above the top of the visible area.
+        if (rect.top <= readerRect.top + 4) {
+          lastSubtitle = { idx, text: b.item.en };
+        }
+      }
+      const newText = lastSubtitle ? lastSubtitle.text : null;
+      // If we didn't find any subtitle above the top, but we're on the
+      // initial page (currentStart === 0), show the first subtitle as a
+      // reasonable chapter heading instead of leaving the header empty.
+      let finalText = newText;
+      if (!finalText && currentStart === 0) {
+        const firstSub = blocks.find((bb) => bb.kind === "subtitle") as
+          | { kind: "subtitle"; item: Sentence; idx: number }
+          | undefined;
+        if (firstSub) finalText = firstSub.item.en;
+      }
+      if (finalText !== currentSubtitle) currentSubtitle = finalText;
+    } catch (e) {
+      console.debug("[BookPage] updateCurrentSubtitle error", e);
+    }
+  }
+
+  function updateCurrentSubtitleDebounced() {
+    if (_subtitleUpdateTimer) window.clearTimeout(_subtitleUpdateTimer);
+    _subtitleUpdateTimer = window.setTimeout(() => {
+      _subtitleUpdateTimer = null;
+      updateCurrentSubtitle();
+    }, 80) as unknown as number;
+  }
+
   // Build book-like blocks: paragraphs of text and standalone subtitles
   type Block =
     | { kind: "paragraph"; idxStart: number; idxEnd: number; items: Sentence[] }
@@ -679,8 +734,13 @@
 
   $: blocks = buildBlocks(sentences);
   // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
-  $: headerTitle = "CHAPTER I. Down the Rabbit-Hole";
   $: rateDisplay = userRate !== null ? userRate : "—";
+
+  $: if (readerEl && blocks) {
+    // ensure header reflects current content after DOM updates
+    // schedule on next tick to allow bindings to settle
+    tick().then(() => updateCurrentSubtitleDebounced());
+  }
 
   // sentence rendering and pointer helpers moved to `src/lib/pages/bookPageUtils.ts`
 </script>
@@ -701,17 +761,16 @@
       >
         <ChevronLeft class="w-5 h-5" />
       </Button>
-      <h2 class="title text-[1.1rem] m-0 font-semibold" title={headerTitle}>
-        {headerTitle}
-      </h2>
-      <div class="actions flex items-center gap-2">
-        <button
-          class="btn btn-primary difficultBtn"
-          type="button"
-          aria-label="Mark difficult"
-          disabled={loading}
-          on:click={handleDifficult}>難しい</button
-        >
+      <div
+        class="pl-2"
+        aria-hidden={currentSubtitle == null}
+        style="pointer-events: none"
+      >
+        {#if currentSubtitle}
+          <div class="text-sm text-slate-600 font-medium">
+            {currentSubtitle}
+          </div>
+        {/if}
       </div>
     </header>
     <p
@@ -814,6 +873,15 @@
               </div>
               <!-- inline boundary sentinels are rendered after sentences when present -->
             {/if}
+            {#if b.kind === "subtitle"}
+              <div
+                class="subtitle-block my-3 text-sm text-slate-700 font-medium text-center"
+                bind:this={subtitleRefs[b.idx]}
+                data-subtitle-index={b.idx}
+              >
+                {b.item.en}
+              </div>
+            {/if}
           {/each}
           {#if true}
             <!-- sentinel inside the scrollable reader so IntersectionObserver root can observe it -->
@@ -829,6 +897,14 @@
 
     <div class="mt-4 text-center text-sm text-slate-600">
       Rate: {rateDisplay}
+    </div>
+    <div class="actions flex items-center gap-2">
+      <Button
+        type="button"
+        aria-label="Mark difficult"
+        disabled={loading}
+        on:click={handleDifficult}>難易度を下げる</Button
+      >
     </div>
     <div
       bind:this={sentinel}
