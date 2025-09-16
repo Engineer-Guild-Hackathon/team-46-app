@@ -858,8 +858,8 @@
   }
 </script>
 
-<main class="bookpage">
-  <header class="topbar">
+<main class="bookpage mx-auto max-w-[800px] my-8 p-4">
+  <header class="topbar grid grid-cols-[auto_1fr_auto] items-center gap-2 mb-3">
     <Button
       class="btn btn-ghost backBtn"
       type="button"
@@ -882,8 +882,8 @@
         <polyline points="15 18 9 12 15 6" />
       </svg>
     </Button>
-    <h2 class="title" title={headerTitle}>{headerTitle}</h2>
-    <div class="actions">
+  <h2 class="title text-[1.1rem] m-0 font-semibold" title={headerTitle}>{headerTitle}</h2>
+  <div class="actions flex items-center gap-2">
       <button
         class="btn btn-primary difficultBtn"
         type="button"
@@ -893,17 +893,17 @@
       >
     </div>
   </header>
-  <p class="interaction-help" aria-label="Usage help">
+  <p class="interaction-help text-[0.7rem] text-gray-600 mt-3 text-center" aria-label="Usage help">
     クリックで単語表示、長押しで文章の意味を表示
   </p>
 
   {#if loading}
-    <section class="book-text">
+    <section class="book-text mt-2">
       <ul class="sentences" aria-live="polite">
         {#each Array(6) as _, _i}
-          <li class="sentence skeleton">
-            <div class="skeleton-line w-90"></div>
-            <div class="skeleton-line w-60 mt-6"></div>
+          <li class="sentence skeleton space-y-2">
+            <div class="skeleton-line w-11/12 h-3 rounded bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 animate-pulse" />
+            <div class="skeleton-line w-2/3 h-3 rounded bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 animate-pulse" />
           </li>
         {/each}
       </ul>
@@ -911,17 +911,17 @@
   {:else if error}
     <p class="error">{error}</p>
   {:else}
-    <section class="book-text">
-      <article class="reader" aria-live="polite" bind:this={readerEl}>
+    <section class="book-text mt-2">
+      <article class="reader font-serif text-[1.25rem] leading-[1.7] text-[#1b1b1b] bg-white border border-slate-200 rounded-xl px-5 pt-5 pb-6 shadow-sm max-h-[75vh] overflow-scroll break-words" aria-live="polite" bind:this={readerEl}>
         {#each blocks as b}
           {#if b.kind === 'paragraph'}
-            <p>
+            <p class="mb-4 last:mb-0">
               {#each b.items as s, j}
                 {#key `${b.idxStart + j}`}
                   <span
                     role="button"
                     tabindex="0"
-                    class="sentenceInline {selected.has(b.idxStart + j) ? 'selected' : ''}"
+                    class="sentenceInline inline relative cursor-pointer rounded px-[0.04em] {selected.has(b.idxStart + j) ? 'selected bg-amber-200' : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-300"
                     bind:this={elRefs[b.idxStart + j]}
                     on:click={(e) => handleClick(b.idxStart + j, e)}
                     on:mousedown={(e) => handleMouseDown(b.idxStart + j, e)}
@@ -949,8 +949,8 @@
                       wordTooltipWordIndex[b.idxStart + j]
                     )}
                   </span>
-                  {#if bubbleVisible.has(b.idxStart + j)}
-                    <span class="jp-translation" aria-label="Japanese translation">{s.jp}</span>
+                    {#if bubbleVisible.has(b.idxStart + j)}
+                    <span class="jp-translation block text-[0.7rem] text-[#0a56ad] mt-1 ml-1 leading-[1.2]" aria-label="Japanese translation">{s.jp}</span>
                   {/if}
                   <span class="sr-only">.</span>
                 {/key}
@@ -962,195 +962,16 @@
     </section>
   {/if}
 
-  <nav class="pagination" aria-label="Page navigation">
-    <button class="btn btn-outline" type="button" aria-label="Previous page" on:click={previousPage} disabled={prevStarts.length === 0 || loading}>
-      <span class="icon"><ChevronLeft size={16} /></span>
+  
+  <nav class="pagination flex justify-center items-center gap-4 mt-4" aria-label="Page navigation">
+    <button class="btn btn-outline h-8 px-3 rounded border border-slate-300 text-slate-700 disabled:opacity-40 inline-flex items-center gap-1" type="button" aria-label="Previous page" on:click={previousPage} disabled={prevStarts.length === 0 || loading}>
+      <span class="icon inline-flex items-center"><ChevronLeft size={16} /></span>
       <span class="btn-label">Previous</span>
     </button>
-  <span class="page-info rate">Rate: {rateDisplay}</span>
-  <button class="btn btn-outline" type="button" aria-label="Next page" on:click={nextPage} disabled={!canNext || loading}>
+    <span class="page-info rate text-sm text-slate-600">Rate: {rateDisplay}</span>
+    <button class="btn btn-outline h-8 px-3 rounded border border-slate-300 text-slate-700 disabled:opacity-40 inline-flex items-center gap-1" type="button" aria-label="Next page" on:click={nextPage} disabled={!canNext || loading}>
       <span class="btn-label">Next</span>
-      <span class="icon"><ChevronRight size={16} /></span>
+      <span class="icon inline-flex items-center"><ChevronRight size={16} /></span>
     </button>
   </nav>
 </main>
-
-<style>
-  .bookpage {
-    max-width: 800px;
-    margin: 2rem auto;
-    padding: 1rem;
-  }
-  .topbar {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-  .actions { display: flex; gap: .5rem; align-items: center; }
-  :global(.btn) { height: 2rem; padding: 0 .5rem; border-radius: 8px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: .25rem; }
-  :global(.btn-ghost) { background: transparent; border-color: #e3e7ee; }
-  :global(.btn-ghost):hover { background: #f6f7f9; }
-  :global(.backBtn) { width: 2rem; justify-content: center; }
-  .title { font-size: 1.1rem; margin: 0; }
-  :global(.btn-primary) { background: #1f6feb; color: white; border-color: transparent; }
-  :global(.btn-primary):hover { background: #145fd1; }
-  :global(.pageBtn) svg { display: block; }
-  :global(.btn) .icon { display: inline-flex; align-items: center; line-height: 1; }
-  :global(.btn) .btn-label { display: inline-flex; align-items: center; }
-
-  .error {
-    color: #b00020;
-  }
-
-  .book-text {
-    margin-top: 0.5rem;
-  }
-  .reader {
-    font-family: Georgia, 'Times New Roman', serif;
-    /* Increased base font size for readability and adjusted line-height */
-    font-size: 1.25rem;
-    line-height: 1.7;
-    color: #1b1b1b;
-    background: #fff;
-    border: 1px solid #eceff3;
-    border-radius: 12px;
-    padding: 1.25rem 1.25rem 1.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    max-height: 75vh;
-    overflow: scroll;
-    word-break: normal;
-    overflow-wrap: anywhere;
-    hyphens: auto;
-  }
-  /* Subtitle now shown in topbar title */
-  .sentence.skeleton {
-    background: #f2f4f8;
-    overflow: hidden;
-  }
-  .skeleton-line {
-    height: 12px;
-    border-radius: 6px;
-    background: linear-gradient(90deg, #e9edf3 25%, #f5f7fb 50%, #e9edf3 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.2s infinite;
-  }
-  .w-90 {
-    width: 90%;
-  }
-  .w-60 {
-    width: 60%;
-  }
-  .mt-6 {
-    margin-top: 6px;
-  }
-  @keyframes shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
-  .sentenceInline {
-    all: unset;
-    display: inline;
-    position: relative;
-    cursor: pointer;
-    border-radius: 4px;
-    padding: 0 0.04em;
-    box-decoration-break: clone;
-    /* Allow native text selection */
-    -webkit-touch-callout: none;
-  }
-  /* add a natural space after each sentence inline element */
-  .sentenceInline::after {
-    content: ' ';
-  }
-  /* but not after the last sentence in a paragraph */
-  .reader p > .sentenceInline:last-child::after {
-    content: '';
-  }
-  .sentenceInline.selected {
-    background: #ffe9a8;
-  }
-  .sentenceInline:focus-visible {
-    outline: 2px solid rgba(100, 150, 250, 0.55);
-    outline-offset: 2px;
-  }
-  .jp-translation {
-    display: block;
-    font-size: 0.7rem;
-    color: #0a56ad;
-    margin: 0.15rem 0 0.4rem 0.25rem;
-    line-height: 1.2;
-  }
-
-  .pagination {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-  .interaction-help {
-    font-size: 0.7rem;
-    color: #666;
-    margin: 0.75rem 0 0;
-    text-align: center;
-  }
-  .pagination .page-info {
-    color: #444;
-    font-size: 0.95rem;
-  }
-  .pagination .rate {
-    margin-left: 0.5rem;
-  }
-  :global(.word) {
-    cursor: pointer;
-    word-break: break-word;
-  }
-  :global(.word-highlight) {
-    background: #e0f0ff;
-    color: #0a56ad !important;
-    border-radius: 3px;
-    padding: 0 0.05em;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
-    font-weight: 600;
-    text-decoration: underline 2px solid #0a56ad;
-    text-underline-offset: 2px;
-  }
-  :global(.word-highlight) {
-    position: relative;
-  }
-  :global(.word-tooltip) {
-    position: absolute;
-    left: 50%;
-    bottom: 100%;
-    transform: translate(-50%, -4px);
-    background: #232f3e;
-    color: #fff;
-    font-size: 0.65rem;
-    line-height: 1.2;
-    padding: 2px 4px;
-    border-radius: 4px;
-    white-space: nowrap;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-    pointer-events: none;
-    z-index: 2;
-  }
-  :global(.word-tooltip.pos-left) {
-    left: 0%;
-    transform: translate(0, -4px);
-  }
-  :global(.word-tooltip.pos-right) {
-    left: 100%;
-    transform: translate(-100%, -4px);
-  }
-  :global(.word-tooltip.pos-flip) {
-    bottom: auto;
-    top: 100%;
-    transform: translate(-50%, 4px);
-  }
-</style>
