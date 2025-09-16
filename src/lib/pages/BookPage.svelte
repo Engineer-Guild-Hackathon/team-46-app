@@ -835,7 +835,7 @@
                         touchPointerDown(b.idxStart + j, e)}
                       on:pointermove={(e) =>
                         touchPointerMove(b.idxStart + j, e)}
-                      on:touchmove={() => cancelAllTouchPresses()}
+                      on:touchmove|passive={() => cancelAllTouchPresses()}
                       on:pointerup={(e) => touchPointerUp(b.idxStart + j, e)}
                       on:keydown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -916,10 +916,5 @@
         on:click={handleDifficult}>難易度を下げる</Button
       >
     </div>
-    <div
-      bind:this={sentinel}
-      class="infinite-sentinel h-2"
-      aria-hidden="true"
-    ></div>
   </div>
 </main>
