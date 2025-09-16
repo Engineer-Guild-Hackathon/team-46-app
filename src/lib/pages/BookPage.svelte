@@ -648,7 +648,8 @@
 </script>
 
 
-<main class="bookpage mx-auto max-w-[800px] my-8 p-4">
+<main class="bookpage fixed inset-0 overflow-hidden overscroll-none box-border">
+  <div class="w-full max-w-[800px] mx-auto h-full py-8 px-4 box-border flex flex-col">
   <header class="topbar grid grid-cols-[auto_1fr_auto] items-center gap-2 mb-3">
     <Button
       class="btn btn-ghost backBtn"
@@ -759,4 +760,5 @@
   
   <div class="mt-4 text-center text-sm text-slate-600">Rate: {rateDisplay}</div>
   <div bind:this={sentinel} class="infinite-sentinel h-2" aria-hidden="true"></div>
+  </div>
 </main>
