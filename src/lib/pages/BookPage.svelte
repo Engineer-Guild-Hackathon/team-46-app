@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick, onDestroy } from 'svelte'
-  // local Sentence shape for this component (keeps file self-contained)
+  // Local sentence type
   type Sentence = {
     type: 'text' | 'subtitle'
     en: string
@@ -23,52 +23,56 @@
 
   export let bookId: string
 
+  // UI state
   let loading = true
   let error: string | null = null
   let sentences: Sentence[] = []
-  // pagination state
+  let selected = new Set<number>()
+  let bubbleVisible = new Set<number>()
+
+  // Pagination / reader state
   let currentStart = 0
   let lastEnd = 0
   let canNext = false
-  let selected = new Set<number>()
-  let bubbleVisible = new Set<number>()
-  const elRefs: Record<number, HTMLElement | null> = {}
-  const WORD_TOOLTIP_MS = 5000 // match sentence duration for placeholder
-
   let readerEl: HTMLElement | null = null
-  let scrollProgress = 0
   let wordsPerPage = 0
+
+  // Page boundary tracking (for mapping appended chunks)
   let pageBoundaries: Set<number> = new Set()
   const boundaryEls: Record<number, HTMLElement | null> = {}
   const pageBoundaryMap: Record<number, number> = {}
+  const pageNumberForBoundary: Record<number, number> = {}
+  let pageCount = 0
+
+  // Telemetry counters
   let sentenceClickCountForRequest = 0
-  let lastLoadCompletedAt: number | null = null
   let wordClickCountForRequest = 0
-  // First load flag: initial request must send null counts (backend interprets as 'no prior page')
+  let lastLoadCompletedAt: number | null = null
   let firstLoad = true
-  // Persisted user reading rate (backend provided) stored per book
+
+  // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null
   const rateStorageKey = (id: string) => `bookRate:${id}`
-  // Currently highlighted word indices per sentence (multiple allowed)
+
+  // Word highlight / tooltip state
+  const WORD_TOOLTIP_MS = 5000
   let wordHighlights: Record<number, Set<number>> = {}
-  // Track which specific word (per sentence) should display the tooltip
   let wordTooltipWordIndex: Record<number, number> = {}
-  // Timestamp of last word selection (reference for potential suppression logic)
-  let _lastWordSelectionAt = 0 // internal timestamp (not currently read)
-  // Word tooltip visibility timers
   let wordTooltipVisible: Record<number, boolean> = {}
   const wordTooltipTimers = new Map<number, number>()
-  // Touch long-press support (mobile simulate right-click)
-  const touchPresses: Record<
-    number,
-    { timer: number; startX: number; startY: number; triggered: boolean }
-  > = {}
+
+  // Touch long-press helpers
+  const touchPresses: Record<number, { timer: number; startX: number; startY: number; triggered: boolean }> = {}
   const LONG_PRESS_TOUCH_MS = 520
   const TOUCH_MOVE_CANCEL_PX = 16
   let suppressClickForSentence: number | null = null
   let lastLongPressAt = 0
+  let _lastWordSelectionAt = 0
+  const elRefs: Record<number, HTMLElement | null> = {}
 
-  // Load a page from API. start===0 replaces content; otherwise responses are appended.
+  /**
+   * Fetch a page of sentences. start===0 replaces content; otherwise append.
+   */
   async function loadPage(start = 0, charCountParam?: number) {
     const isInitial = start === 0
     if (isInitial) loading = true
@@ -133,6 +137,7 @@
         if (start === 0) {
           sentences = newSentences
           currentStart = start
+          pageCount = 1
         } else {
           const beforeLen = sentences.length
           // record soft page boundary at the index where new chunk begins
@@ -140,12 +145,16 @@
           pageBoundaries = new Set(pageBoundaries)
           // map the sentence array index to the API startSentenceNo requested
           pageBoundaryMap[beforeLen] = start
+          // record an ordinal page number for this boundary
+          pageCount = (pageCount || 1) + 1
+          pageNumberForBoundary[beforeLen] = pageCount
           sentences = sentences.concat(newSentences)
           console.debug('[BookPage] 📥 Appended sentences', {
             fetched: newSentences.length,
             beforeLen,
             afterLen: sentences.length,
             startSentenceNoRequested: start,
+            page: pageCount,
           })
         }
         // update pagination state (lastEnd always moves forward if we received anything)
@@ -170,7 +179,7 @@
     }
   }
 
-  // Test hook: only defined in test environment to allow forcing a second load without user interaction.
+  // Test hook (Vitest): allow forcing a next load from tests
   if (typeof window !== 'undefined' && (window as any).__VITEST__) {
     ;(window as any).__bookPageForceNext = () => {
       // simulate advancing by lastEnd to request next chunk
@@ -178,7 +187,7 @@
     }
   }
 
-  // Infinite scroll: load next chunk & append
+  // Infinite scroll helpers
   let loadingMore = false
   async function loadMore() {
     if (loadingMore || loading) return
@@ -208,7 +217,8 @@
     showBubble(i)
   }
 
-  // LEFT CLICK -> select / toggle word highlight
+  // Interaction handlers
+  // Left click: toggle/select a word
   function handleClick(i: number, e: MouseEvent) {
     if (e.button !== 0) return
     // If a long-press just triggered sentence translation, suppress immediate word selection
@@ -251,14 +261,13 @@
     showWordTooltip(i, idx)
   }
 
-  // CONTEXT MENU (right-click) -> toggle sentence translation bubble (flipped)
+  // Context menu (right-click): toggle sentence translation
   function handleContextMenu(i: number, e: MouseEvent) {
     e.preventDefault()
     toggleSentence(i)
   }
 
-  // Fallback: capture right-button mousedown early (some browsers may not fire contextmenu quickly on mobile emulation)
-  // RIGHT BUTTON mousedown -> toggle sentence translation (consistent with contextmenu)
+  // Fallback: right-button mousedown toggles sentence translation
   function handleMouseDown(i: number, e: MouseEvent) {
     if (e.button !== 2) return
     toggleSentence(i)
@@ -346,6 +355,7 @@
     )
   }
 
+  // Tooltip helpers
   function showWordTooltip(i: number, wordIdx?: number) {
     // clear existing
     const existing = wordTooltipTimers.get(i)
@@ -370,7 +380,7 @@
     if (existing) window.clearTimeout(existing)
     wordTooltipTimers.delete(i)
   }
-
+  // Difficulty button: adjust user rate and reload
   async function handleDifficult() {
     if (loading) return
     const prevRate = userRate ?? 0
@@ -391,7 +401,7 @@
   await loadPage(currentStart, getCharCountForViewport())
   }
 
-  // Ensure tooltip stays within viewport / reader container
+  // Position word tooltip to avoid clipping
   function adjustWordTooltipPosition(sentenceIdx: number) {
     const container = document.querySelector('article.reader') as HTMLElement | null
     if (!container) return
@@ -431,6 +441,7 @@
     bubbleVisible = new Set(bubbleVisible)
   }
 
+  // Lifecycle: initial load and observers
   onMount(async () => {
     // Load persisted user rate if available
     try {
@@ -453,7 +464,7 @@
 
     // wait for DOM to update so sentinel binds inside readerEl
     await tick()
-    // setup scroll listener on the reader element and init observer
+  // setup scroll listener and observer
     if (readerEl) {
       readerEl.addEventListener('scroll', updateScrollProgressDebounced, { passive: true })
       // initial progress calc
@@ -479,27 +490,12 @@
     return 4500
   }
 
-  function updateScrollProgress() {
-    if (!readerEl) {
-      scrollProgress = 0
-      return
-    }
-    const el = readerEl
-    const scrollTop = el.scrollTop
-    const scrollHeight = el.scrollHeight
-    const clientHeight = el.clientHeight
-    const max = Math.max(1, scrollHeight - clientHeight)
-    const pct = Math.max(0, Math.min(100, Math.round((scrollTop / max) * 100)))
-    scrollProgress = pct
-  }
-
-  // Debounced worker to check near-bottom and load next when within N lines of bottom
+  // Debounced near-bottom loader (kept as helper but uses direct event handling)
   let _scrollDebounceTimer: number | null = null
   const SCROLL_DEBOUNCE_MS = 120
-  // trigger earlier: ~8 lines from bottom to be ~4-5 lines higher than previous behavior
+  // trigger earlier: ~8 lines from bottom
   const LINES_FROM_BOTTOM = 8
   const EXTRA_TRIGGER_PX = 12
-  // increase cooldown so rapid up/down scrolls don't cause duplicate loads
   const SCROLL_TRIGGER_COOLDOWN_MS = 2500
   let _lastScrollTriggerAt = 0
 
@@ -512,7 +508,6 @@
       const scrollHeight = el.scrollHeight
       const distanceFromBottom = Math.max(0, scrollHeight - (scrollTop + clientHeight))
 
-      // compute line-height in px; fallback to 20px if not parseable
       const cs = window.getComputedStyle(el)
       let lineHeight = parseFloat(cs.lineHeight || '')
       if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
@@ -520,14 +515,12 @@
         lineHeight = Math.round(fontSize * 1.25)
       }
 
-  const thresholdPx = LINES_FROM_BOTTOM * lineHeight + EXTRA_TRIGGER_PX
+      const thresholdPx = LINES_FROM_BOTTOM * lineHeight + EXTRA_TRIGGER_PX
       if (distanceFromBottom <= thresholdPx) {
         const now = Date.now()
         if (now - _lastScrollTriggerAt < SCROLL_TRIGGER_COOLDOWN_MS) return
         _lastScrollTriggerAt = now
-        // trigger load: prefer mapping-aware loadPage if there's a known next start, otherwise loadMore
         if (lastEnd && lastEnd > 0) {
-          // request next chunk using lastEnd
           void loadPage(lastEnd + 1, getCharCountForViewport()).catch(() => {})
         } else {
           void loadMore().catch(() => {})
@@ -539,7 +532,6 @@
   }
 
   function updateScrollProgressDebounced() {
-    updateScrollProgress()
     if (_scrollDebounceTimer) window.clearTimeout(_scrollDebounceTimer)
     _scrollDebounceTimer = window.setTimeout(() => {
       _scrollDebounceTimer = null
@@ -682,7 +674,7 @@
       <article class="reader font-serif text-[1.25rem] leading-[1.7] text-[#1b1b1b] bg-white border border-slate-200 rounded-xl px-5 pt-5 pb-6 shadow-sm max-h-[75vh] overflow-scroll break-words" aria-live="polite" bind:this={readerEl}>
         {#each blocks as b}
           {#if b.kind === 'paragraph'}
-            <p class="mb-4 last:mb-0">
+            <div class="mb-4 last:mb-0">
               {#each b.items as s, j}
                 {#key `${b.idxStart + j}`}
                   <span
@@ -722,15 +714,19 @@
                   <span class="sr-only">.</span>
                   {/key}
                   {#if pageBoundaries.has(b.idxStart + j + 1)}
-                    <span
-                      class="inline-block w-full h-0"
+                    <div
+                      class="page-separator my-4 flex items-center text-sm text-slate-500"
                       aria-hidden="true"
                       data-boundary-index={b.idxStart + j + 1}
                       bind:this={boundaryEls[b.idxStart + j + 1]}
-                    ></span>
+                    >
+                      <div class="flex-1 h-[1px] bg-slate-200"></div>
+                      <div class="px-3">Page {pageNumberForBoundary[b.idxStart + j + 1] ?? '—'}</div>
+                      <div class="flex-1 h-[1px] bg-slate-200"></div>
+                    </div>
                   {/if}
-                {/each}
-            </p>
+        {/each}
+      </div>
             <!-- inline boundary sentinels are rendered after sentences when present -->
           {/if}
         {/each}
@@ -745,8 +741,4 @@
   
   <div class="mt-4 text-center text-sm text-slate-600">Rate: {rateDisplay}</div>
   <div bind:this={sentinel} class="infinite-sentinel h-2" aria-hidden="true"></div>
-  <!-- Bottom scroll progress bar -->
-  <div aria-hidden="true" class="fixed left-0 right-0 bottom-0 h-1 bg-transparent">
-  <div class="bg-blue-500 h-1 transition-width duration-150" style={`width: ${scrollProgress}%`}></div>
-  </div>
 </main>
