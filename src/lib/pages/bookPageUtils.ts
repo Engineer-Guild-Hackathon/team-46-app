@@ -35,15 +35,25 @@ export function renderSentenceHTML(
     }
     const word = m[0];
     const isHighlighted = !!highlightSet && highlightSet.has(wi);
-    const cls = isHighlighted ? "word word-highlight" : "word";
+    // Keep the structural class names (word / word-tooltip) so JS selectors
+    // continue to work, but also emit Tailwind utility classes for styling.
+    // Highlighted words become blue, bold and underlined via Tailwind.
+    const baseCls = "word inline relative cursor-pointer whitespace-normal";
+    const highlightCls =
+      "text-[#0a56ad] underline decoration-[#0a56ad] decoration-2 underline-offset-2";
+    const cls = isHighlighted ? `${baseCls} ${highlightCls}` : baseCls;
     if (isHighlighted && tooltipVisible && wi === tooltipWordIdx) {
       const jpWord = s.jp_word?.[wi];
       const tip =
         jpWord && jpWord.trim() !== ""
           ? esc(jpWord)
           : "Translation unavailable";
+      // Tooltip uses Tailwind utilities for visual styling and absolute placement
+      // JS positioning will adjust inline styles for edge cases (flip/shift).
+      const tipCls =
+        "word-tooltip absolute left-1/2 -translate-x-1/2 bottom-full mb-2 transform bg-slate-800 text-white text-xs leading-tight px-2 py-1 rounded shadow z-50 pointer-events-none whitespace-nowrap";
       out.push(
-        `<span class="${cls}" data-wi="${wi}">${esc(word)}<span class="word-tooltip" aria-label="Japanese translation">${tip}</span></span>`,
+        `<span class="${cls}" data-wi="${wi}">${esc(word)}<span class="${tipCls}" aria-label="Japanese translation">${tip}</span></span>`,
       );
     } else {
       out.push(`<span class="${cls}" data-wi="${wi}">${esc(word)}</span>`);

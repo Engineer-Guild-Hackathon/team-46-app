@@ -418,17 +418,34 @@
     const tipRect = tip.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
     const padding = 4
-    // Horizontal overflow check
-    if (tipRect.left < containerRect.left + padding) {
-      tip.classList.add('pos-left')
-    } else if (tipRect.right > containerRect.right - padding) {
-      tip.classList.add('pos-right')
-    }
-    // Vertical (if not enough space above, flip below)
-    if (tipRect.top < containerRect.top + 4) {
-      tip.classList.add('pos-flip')
-    }
-    // If flipped below, adjust transform via CSS class
+      // Compute adjustments and apply inline styles to avoid custom CSS classes.
+      // Reset any inline adjustments first
+      tip.style.removeProperty('left')
+      tip.style.removeProperty('right')
+      tip.style.removeProperty('transform')
+      tip.style.removeProperty('bottom')
+      tip.style.removeProperty('top')
+      // Horizontal overflow: nudge tooltip so it stays within container
+      const overLeft = tipRect.left - (containerRect.left + padding)
+      const overRight = tipRect.right - (containerRect.right - padding)
+      if (overLeft < 0) {
+        // shift tooltip right by the deficit
+        const shift = Math.abs(overLeft)
+        tip.style.transform = `translateX(${shift}px)`
+      } else if (overRight > 0) {
+        const shift = -Math.abs(overRight)
+        tip.style.transform = `translateX(${shift}px)`
+      }
+      // Vertical: if not enough space above, flip below the word
+      if (tipRect.top < containerRect.top + 4) {
+        // place tooltip below the word
+        tip.style.bottom = 'auto'
+        tip.style.top = '100%'
+        tip.style.marginTop = '6px'
+      } else {
+        tip.style.bottom = '100%'
+        tip.style.marginBottom = '8px'
+      }
   }
 
   function showBubble(i: number) {
@@ -629,6 +646,7 @@
 
   // sentence rendering and pointer helpers moved to `src/lib/pages/bookPageUtils.ts`
 </script>
+
 
 <main class="bookpage mx-auto max-w-[800px] my-8 p-4">
   <header class="topbar grid grid-cols-[auto_1fr_auto] items-center gap-2 mb-3">
