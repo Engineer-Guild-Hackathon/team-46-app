@@ -12,10 +12,7 @@
   import { getTextPage } from "$lib/api/text";
   import {
     renderSentenceHTML,
-    esc,
-    formatSentence,
     selectWordAtPointer as selectWordAtPointerHelper,
-    pickWordByRatio as pickWordByRatioHelper,
   } from "$lib/pages/bookPageUtils";
   import { ChevronLeft } from "@lucide/svelte";
   import Button from "$lib/components/ui/button/button.svelte";
@@ -39,7 +36,7 @@
   let lastEnd = 0;
   let canNext = false;
   let readerEl: HTMLElement | null = null;
-  let wordsPerPage = 0;
+  let _wordsPerPage = 0;
 
   // Page boundary tracking (for mapping appended chunks)
   let pageBoundaries: Set<number> = new Set();
@@ -182,7 +179,8 @@
       sentenceClickCountForRequest = 0;
       wordClickCountForRequest = 0;
       if (firstLoad) firstLoad = false;
-    } catch (e: unknown) {
+    } catch (_e: unknown) {
+      const e = _e as Error | undefined;
       error = e instanceof Error ? e.message : "Failed to load text";
     } finally {
       if (isInitial) loading = false;
@@ -259,7 +257,7 @@
       const sentence = sentences[i];
       const rawText = sentence?.en ?? "";
       // match words including internal apostrophes (ASCII and Unicode) and hyphens
-      const re = /[A-Za-z0-9]+(?:['’\-][A-Za-z0-9]+)*/g;
+      const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
       const words: string[] = [];
       let m: RegExpExecArray | null;
       while ((m = re.exec(rawText)) !== null) words.push(m[0]);
@@ -358,10 +356,10 @@
   // Cancel all pending touch long-press timers (used when the user scrolls or
   // moves substantially so we don't accidentally trigger long-press behavior)
   function cancelAllTouchPresses() {
-    for (const k in touchPresses) {
-      const t = touchPresses[k];
+    for (const _k in touchPresses) {
+      const t = touchPresses[_k];
       if (t && t.timer) window.clearTimeout(t.timer);
-      delete touchPresses[Number(k)];
+      delete touchPresses[Number(_k)];
     }
   }
 
@@ -369,21 +367,17 @@
     const spanEl = elRefs[i];
     return selectWordAtPointerHelper(spanEl, e);
   }
-
-  function pickWordByRatio(i: number, e: PointerEvent): number | undefined {
-    const spanEl = elRefs[i];
-    return pickWordByRatioHelper(spanEl, e);
-  }
+  // pickWordByRatio helper intentionally removed to avoid unused symbol
 
   function reassignWordHighlights() {
     // clone sets to trigger Svelte reactivity
     const clone: Record<number, Set<number>> = {};
-    for (const k in wordHighlights) clone[k] = new Set(wordHighlights[k]);
+    for (const _k in wordHighlights) clone[_k] = new Set(wordHighlights[_k]);
     wordHighlights = clone;
     console.debug(
       "[BookPage] wordHighlights state (multiple)",
       Object.fromEntries(
-        Object.entries(wordHighlights).map(([k, v]) => [k, Array.from(v)]),
+        Object.entries(wordHighlights).map(([key, v]) => [key, Array.from(v)]),
       ),
     );
   }
@@ -515,7 +509,7 @@
     try {
       const charCount = getCharCountForViewport();
       await loadPage(0, charCount);
-    } catch (e) {
+    } catch (_e) {
       // fallback to calling without charCount
       await loadPage(0);
     }
@@ -604,8 +598,8 @@
           void loadMore().catch(() => {});
         }
       }
-    } catch (e) {
-      console.debug("[BookPage] checkAndLoadNearBottom error", e);
+    } catch (_e) {
+      console.debug("[BookPage] checkAndLoadNearBottom error", _e);
     }
   }
 
@@ -630,7 +624,7 @@
             const el = entry.target as HTMLElement;
             // determine the boundary index by searching boundaryEls
             const idx = Number(
-              Object.entries(boundaryEls).find(([k, v]) => v === el)?.[0],
+              Object.entries(boundaryEls).find(([_k, v]) => v === el)?.[0],
             );
             if (!Number.isFinite(idx)) continue;
             // unobserve this boundary to avoid duplicate triggers
@@ -656,8 +650,8 @@
       },
     );
     // observe all existing boundaryEls
-    for (const k in boundaryEls) {
-      const el = boundaryEls[k];
+    for (const _k in boundaryEls) {
+      const el = boundaryEls[_k];
       if (el) observer.observe(el);
     }
   }
@@ -696,8 +690,8 @@
         if (firstSub) finalText = firstSub.item.en;
       }
       if (finalText !== currentSubtitle) currentSubtitle = finalText;
-    } catch (e) {
-      console.debug("[BookPage] updateCurrentSubtitle error", e);
+    } catch (_e) {
+      console.debug("[BookPage] updateCurrentSubtitle error", _e);
     }
   }
 

@@ -4,7 +4,7 @@ import BookPage from "../../src/lib/pages/BookPage.svelte";
 
 // Mock the API module used by BookPage
 vi.mock("../../src/lib/api/text", () => ({
-  getTextPage: vi.fn(async (_params: any) => {
+  getTextPage: vi.fn(async () => {
     return {
       text: [
         { type: "text", sentenceNo: 1, en: "Hello world", jp: "こんにちは" },
@@ -20,14 +20,14 @@ import { getTextPage } from "../../src/lib/api/text";
 describe("BookPage infinite scroll", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    (getTextPage as unknown as any).mockClear?.();
+    (getTextPage as unknown as { mockClear?: () => void }).mockClear?.();
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
   it("calls API only once when user scrolls twice within cooldown", async () => {
-    const { container, component } = render(BookPage, { bookId: "book-1" });
+    const { container } = render(BookPage, { bookId: "book-1" });
 
     // wait for initial load to settle
     await vi.runAllTimersAsync();
@@ -86,7 +86,9 @@ describe("BookPage infinite scroll", () => {
 
     // The mocked getTextPage should have been called for initial load and then at most once for the near-bottom trigger
     // initial call + at most one extra due to cooldown
-    const calls = (getTextPage as unknown as any).mock.calls.length;
+    const calls =
+      (getTextPage as unknown as { mock?: { calls?: unknown[] } }).mock?.calls
+        ?.length ?? 0;
     expect(calls).toBeGreaterThanOrEqual(1);
     expect(calls).toBeLessThanOrEqual(2);
   });

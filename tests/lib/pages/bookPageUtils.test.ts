@@ -13,7 +13,10 @@ describe("bookPageUtils", () => {
     expect(formatSentence("  hello   world  ")).toBe("hello world");
   });
   it("renders sentence with words", () => {
-    const s = { en: "hello world", type: "text" } as any;
+    const s = { en: "hello world", type: "text" } as unknown as {
+      en: string;
+      type: "text";
+    };
     const html = renderSentenceHTML(0, s);
     expect(html.includes("span")).toBe(true);
     expect(html.includes("hello")).toBe(true);
