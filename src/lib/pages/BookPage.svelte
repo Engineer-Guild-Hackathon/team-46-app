@@ -23,24 +23,16 @@
   // pagination state
   let currentStart = 0
   let lastEnd = 0
-  let prevStarts: number[] = []
   let canNext = false
   let selected = new Set<number>()
   let bubbleVisible = new Set<number>()
   const elRefs: Record<number, HTMLElement | null> = {}
-  // Removed popup auto-hide: translations stay until user toggles
   const WORD_TOOLTIP_MS = 5000 // match sentence duration for placeholder
 
   let readerEl: HTMLElement | null = null
   let wordsPerPage = 0
-  let charCountForRequest = 800
-  const AVG_CHARS_PER_WORD = 6 // average letters + space
-  // Telemetry for backend: count sentence translation clicks, and time between loads
   let sentenceClickCountForRequest = 0
   let lastLoadCompletedAt: number | null = null
-  // Simple page cache for going backwards: startSentenceNo -> displayed page
-  const pageCache = new Map<number, { sentences: Sentence[]; endSentenceNo: number }>()
-  // Word-level telemetry (long-press selects a word)
   let wordClickCountForRequest = 0
   // First load flag: initial request must send null counts (backend interprets as 'no prior page')
   let firstLoad = true
@@ -66,13 +58,14 @@
   let suppressClickForSentence: number | null = null
   let lastLongPressAt = 0
 
-  async function loadPage(start = 0, charCountParam?: number, preferCache = false) {
+  // Load a page from API. start===0 replaces content; otherwise responses are appended.
+  async function loadPage(start = 0, charCountParam?: number) {
     loading = true
     error = null
-    sentences = []
+    // If loading the first chunk, replace; otherwise append
+    if (start === 0) sentences = []
     // clear transient word render cache (recomputed lazily)
     try {
-      let _fromCache = false
       let apiTextLength = 0
       // Compute telemetry: seconds since last completed page load
       const timeSec = lastLoadCompletedAt
@@ -89,27 +82,13 @@
         endSentenceNo: number
       }
 
-      // Try cache for previous pages
-      if (preferCache && pageCache.has(start)) {
-        const cached = pageCache.get(start)!
-        sentences = cached.sentences.slice()
-        lastEnd = cached.endSentenceNo
-        currentStart = start
-        apiTextLength = sentences.length
-        _fromCache = true
-        console.debug('[BookPage] Loaded page from cache:', {
-          start,
-          cachedCount: sentences.length,
-          endSentenceNo: lastEnd,
-        })
-      } else {
-        // Build and log API params
+  // Build and log API params
         const apiParams = {
           bookId,
           startSentenceNo: start,
           userId:
             (typeof localStorage !== 'undefined' && localStorage.getItem('userId')) || 'anonymous',
-          charCount: charCountParam ?? charCountForRequest,
+          charCount: charCountParam,
           wordClickCount: firstLoad ? null : wordClickCountForRequest,
           sentenceClickCount: firstLoad ? null : sentenceClickCountForRequest,
           time: timeSec,
@@ -130,7 +109,7 @@
         }
 
         // Map to local Sentence shape
-        sentences = res.text.map((t) => ({
+        const newSentences = res.text.map((t) => ({
           type: t.type,
           en: t.en,
           jp: t.jp,
@@ -138,11 +117,24 @@
           level: String(t.sentenceNo),
           sentenceNo: t.sentenceNo,
         }))
-        // update pagination state
-        lastEnd = res.endSentenceNo
-        currentStart = start
-        apiTextLength = res.text.length
-      }
+        if (start === 0) {
+          sentences = newSentences
+          currentStart = start
+        } else {
+          const beforeLen = sentences.length
+          sentences = sentences.concat(newSentences)
+          console.debug('[BookPage] 📥 Appended sentences', {
+            fetched: newSentences.length,
+            beforeLen,
+            afterLen: sentences.length,
+            startSentenceNoRequested: start,
+          })
+        }
+        // update pagination state (lastEnd always moves forward if we received anything)
+        if (newSentences.length > 0) {
+          lastEnd = res.endSentenceNo
+        }
+        apiTextLength = newSentences.length
       // Important: render the reader content now so measurement can find it
       loading = false
 
@@ -151,256 +143,11 @@
       wordClickCountForRequest = 0
       if (firstLoad) firstLoad = false
 
-      console.debug(
-        '[BookPage] Initial sentences loaded:',
-        sentences.length,
-        'sentences from',
-        currentStart,
-        'to',
-        lastEnd
-      )
-
-      // Wait for DOM to render so we can measure whether content overflows
-      await tick()
-      await new Promise((r) => requestAnimationFrame(r)) // Extra frame for element refs to be set
-      await tick() // Extra tick to ensure element binding is ready
-
-      // Ensure the reader element actually exists (loading branch swaps to reader)
-      // Retry a few frames if needed
-      if (!readerEl) {
-        for (let tries = 0; tries < 8 && !readerEl; tries++) {
-          readerEl = document.querySelector('article.reader') as HTMLElement | null
-          if (readerEl) break
-          await new Promise((r) => requestAnimationFrame(r))
-          await tick()
-        }
-      }
-
-      console.debug('[BookPage] 🔍 Starting overflow detection after tick+RAF+tick...', {
-        hasReaderElBound: !!readerEl,
-        sentencesCount: sentences.length,
-        loadingState: loading,
-        errorState: error,
-        blocksLength: blocks.length,
-        currentUrl: window.location.href,
-      })
-
-      try {
-        console.debug('[BookPage] 🔍 Checking conditions:', {
-          sentencesLength: sentences.length,
-          hasReaderEl: !!readerEl,
-          readerElFound: readerEl ? 'YES' : 'NO',
-        })
-
-        if (sentences.length > 0) {
-          // Debug: ALWAYS check what's in the DOM, regardless of readerEl binding
-          const allArticles = document.querySelectorAll('article')
-          const allReaderClass = document.querySelectorAll('.reader')
-          const articleReader = document.querySelector('article.reader')
-          const bookTextSection = document.querySelector('.book-text')
-
-          console.debug('[BookPage] 🔍 DOM INSPECTION:', {
-            'article.reader found': !!articleReader,
-            '.reader found': !!allReaderClass.length,
-            'article count': allArticles.length,
-            '.book-text found': !!bookTextSection,
-            'readerEl bound': !!readerEl,
-            'loading state': loading,
-            'error state': error,
-            allArticles: Array.from(allArticles).map((el) => ({
-              tagName: el.tagName,
-              className: el.className,
-              id: el.id,
-              textContent: el.textContent?.substring(0, 50) + '...',
-            })),
-            'document.body classes': document.body.className,
-            'current HTML structure':
-              document.querySelector('main')?.innerHTML.substring(0, 800) || 'NO MAIN FOUND',
-          })
-
-          // Try to get readerEl if we don't have it (should be bound, but fallback just in case)
-          if (!readerEl) {
-            // Try multiple selectors to find the reader element
-            readerEl = articleReader as HTMLElement | null
-            if (!readerEl && allReaderClass.length > 0) {
-              readerEl = allReaderClass[0] as HTMLElement | null
-            }
-            if (!readerEl && allArticles.length > 0) {
-              readerEl = allArticles[0] as HTMLElement | null
-            }
-
-            console.debug(
-              '[BookPage] 🔍 Final readerEl found via fallback:',
-              !!readerEl,
-              readerEl?.className
-            )
-          }
-
-          if (readerEl) {
-            console.debug('[BookPage] ✅ Proceeding with overflow detection')
-
-            const readerRect = readerEl.getBoundingClientRect()
-            const readerStyles = window.getComputedStyle(readerEl)
-
-            console.debug('[BookPage] 🔍 READER CONTAINER:', {
-              maxHeight: readerStyles.maxHeight,
-              actualHeight: Math.round(readerRect.height),
-              overflow: readerStyles.overflow,
-              bottom: Math.round(readerRect.bottom),
-              sentenceCount: sentences.length,
-              elRefsCount: Object.keys(elRefs).length,
-              elRefsObject: Object.fromEntries(Object.entries(elRefs).map(([k, v]) => [k, !!v])),
-            })
-
-            // Check for overflow and trim if needed
-            let cutOffFound = false
-            let firstCutOffIndex = -1
-
-            // Check each sentence element to see if its bottom overflows the container
-            // Note: we need to check based on block structure since elRefs uses block-based indices
-            let sentenceIndex = 0
-            for (const block of blocks) {
-              if (block.kind === 'paragraph') {
-                for (let j = 0; j < block.items.length; j++) {
-                  const elementIndex = block.idxStart + j
-                  const sentenceEl = elRefs[elementIndex]
-
-                  if (sentenceEl && sentenceIndex < sentences.length) {
-                    const sentenceRect = sentenceEl.getBoundingClientRect()
-                    const sentenceBottom = sentenceRect.bottom
-                    const containerBottom = readerRect.bottom
-                    const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
-
-                    console.debug(
-                      `[BookPage] 📏 Sentence ${sentenceIndex} (elRef ${elementIndex}):`,
-                      {
-                        text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
-                        sentenceBottom: Math.round(sentenceBottom),
-                        containerBottom: Math.round(containerBottom),
-                        overflowBy: Math.round(sentenceBottom - containerBottom),
-                        overflows,
-                        hasElement: !!sentenceEl,
-                      }
-                    )
-
-                    if (overflows && firstCutOffIndex === -1) {
-                      firstCutOffIndex = sentenceIndex
-                      cutOffFound = true
-                      console.debug(
-                        `[BookPage] 🚨 BOTTOM OVERFLOW at sentence ${sentenceIndex} (elRef ${elementIndex}):`,
-                        {
-                          sentenceNo: sentences[sentenceIndex].sentenceNo,
-                          text: sentences[sentenceIndex].en,
-                          overflowBy: Math.round(sentenceBottom - containerBottom) + 'px',
-                        }
-                      )
-                      break
-                    }
-                  } else {
-                    console.debug(
-                      `[BookPage] ⚠️ No element ref for sentence ${sentenceIndex} (elRef ${elementIndex})`
-                    )
-                  }
-
-                  sentenceIndex++
-                }
-                if (cutOffFound) break
-              } else if (block.kind === 'subtitle') {
-                // Handle subtitle block
-                const elementIndex = block.idx
-                const sentenceEl = elRefs[elementIndex]
-
-                if (sentenceEl && sentenceIndex < sentences.length) {
-                  const sentenceRect = sentenceEl.getBoundingClientRect()
-                  const sentenceBottom = sentenceRect.bottom
-                  const containerBottom = readerRect.bottom
-                  const overflows = sentenceBottom > containerBottom + 1 // 1px tolerance
-
-                  console.debug(
-                    `[BookPage] 📏 Subtitle ${sentenceIndex} (elRef ${elementIndex}):`,
-                    {
-                      text: `"${sentences[sentenceIndex].en.substring(0, 40)}..."`,
-                      sentenceBottom: Math.round(sentenceBottom),
-                      containerBottom: Math.round(containerBottom),
-                      overflowBy: Math.round(sentenceBottom - containerBottom),
-                      overflows,
-                      hasElement: !!sentenceEl,
-                    }
-                  )
-
-                  if (overflows && firstCutOffIndex === -1) {
-                    firstCutOffIndex = sentenceIndex
-                    cutOffFound = true
-                    console.debug(
-                      `[BookPage] 🚨 BOTTOM OVERFLOW at subtitle ${sentenceIndex} (elRef ${elementIndex}):`,
-                      {
-                        sentenceNo: sentences[sentenceIndex].sentenceNo,
-                        text: sentences[sentenceIndex].en,
-                        overflowBy: Math.round(sentenceBottom - containerBottom) + 'px',
-                      }
-                    )
-                    break
-                  }
-                } else {
-                  console.debug(
-                    `[BookPage] ⚠️ No element ref for subtitle ${sentenceIndex} (elRef ${elementIndex})`
-                  )
-                }
-
-                sentenceIndex++
-              }
-            }
-
-            // If we found overflowing content, trim it
-            if (cutOffFound && firstCutOffIndex > 0) {
-              const originalLength = sentences.length
-              const heldSentences = sentences.slice(firstCutOffIndex)
-              sentences = sentences.slice(0, firstCutOffIndex)
-
-              // Update pagination state
-              const lastIncluded = sentences[sentences.length - 1]
-              lastEnd = lastIncluded.sentenceNo ?? currentStart + sentences.length - 1
-              const heldSentenceNo = heldSentences[0].sentenceNo ?? firstCutOffIndex
-              canNext = true
-
-              console.debug('[BookPage] ✂️ TRIMMED OVERFLOW SENTENCES:', {
-                originalCount: originalLength,
-                keptCount: sentences.length,
-                trimmedCount: heldSentences.length,
-                lastDisplayedSentenceNo: lastEnd,
-                firstHeldSentenceNo: heldSentenceNo,
-                trimmedSentences: heldSentences.map(
-                  (s) => `${s.sentenceNo}: "${s.en.substring(0, 30)}..."`
-                ),
-              })
-
-              // Force a re-render to ensure the trimmed sentences are removed
-              await tick()
-            } else {
-              // No cut-off detected
-              canNext = lastEnd + 1 > start && sentences.length > 0
-              console.debug('[BookPage] ✅ No overflow detected, all content fits')
-            }
-          } else {
-            console.debug('[BookPage] ❌ Cannot detect overflow: no reader element found')
-            canNext = lastEnd + 1 > start && sentences.length > 0
-          }
-        } else {
-          console.debug('[BookPage] ❌ No sentences to check')
-          canNext = false
-        }
-      } catch (me: unknown) {
-        // ignore measurement errors — fall back to previous canNext heuristic
-        console.warn('[BookPage] measurement error', me)
-        canNext = lastEnd + 1 > start && apiTextLength > 0
-      }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : 'Failed to load text'
     } finally {
       loading = false
       lastLoadCompletedAt = Date.now()
-      if (sentences.length > 0)
-        pageCache.set(currentStart, { sentences: sentences.slice(), endSentenceNo: lastEnd })
     }
   }
 
@@ -412,24 +159,15 @@
     }
   }
 
-  async function nextPage() {
-    if (loading || !canNext) return
-    // push current start to history so we can go back
-    prevStarts.push(currentStart)
-    const nextStart = lastEnd + 1
-  // Clear current selections/highlights before navigating
-  clearSelections()
-  // Always fetch next page from API (do not use cache)
-  await loadPage(nextStart, undefined, false)
-  }
-
-  async function previousPage() {
-    if (loading || prevStarts.length === 0) return
-    const prev = prevStarts.pop() as number
-  // Clear current selections/highlights before navigating
-  clearSelections()
-  // Prefer cache for previous pages
-  await loadPage(prev, undefined, true)
+  // Infinite scroll: load next chunk & append
+  let loadingMore = false
+  async function loadMore() {
+    if (loadingMore || loading) return
+    if (!canNext && sentences.length > 0) return
+    loadingMore = true
+  const nextStart = lastEnd + 1
+  await loadPage(nextStart)
+    loadingMore = false
   }
 
   function toggleSentence(i: number) {
@@ -670,9 +408,9 @@
       prevRate
     ).catch(() => {})
 
-    clearSelections()
-    // Re-load current page with same start & charCount using updated rate (force fresh fetch)
-    await loadPage(currentStart, charCountForRequest, false)
+  clearSelections()
+  // Re-load current page with same start & charCount using updated rate (force fresh fetch)
+  await loadPage(currentStart)
   }
 
   // Ensure tooltip stays within viewport / reader container
@@ -755,19 +493,38 @@
       console.debug('[wpp] reader not found, body wordsPerPage =', wordsPerPage)
     }
 
-    // derive a conservative charCount from wordsPerPage and request the page
-    // Conservative estimation: cap wordsPerPage for char estimation at 220 and use higher avg char multiplier
-    const wppForEstimate = Math.min(wordsPerPage, 220)
-    const estimated = Math.max(
-      80,
-      Math.min(4000, Math.floor(wppForEstimate * (AVG_CHARS_PER_WORD + 1)))
-    )
-    charCountForRequest = estimated
-    console.debug('[BookPage] estimated charCount from wordsPerPage=', estimated)
-
-    // load first page using estimated charCount
-    await loadPage(0, charCountForRequest)
+  // compute wordsPerPage but do not rely on estimated charCount; API will be requested with defaults
+  await loadPage(0)
+    // After initial load, enable canNext for infinite scroll if we received something
+    canNext = true
+    // Start intersection observer for sentinel
+    initInfiniteObserver()
   })
+
+  // Intersection observer sentinel (bottom marker)
+  let sentinel: HTMLElement | null = null
+  let observer: IntersectionObserver | null = null
+  function initInfiniteObserver() {
+    if (observer) observer.disconnect()
+    if (!readerEl) return
+    observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            // Small delay to allow UI settle
+            loadMore()
+          }
+        }
+      },
+      {
+        root: readerEl,
+        rootMargin: '0px 0px 30% 0px',
+        threshold: 0.01,
+      }
+    )
+    if (sentinel) observer.observe(sentinel)
+  }
+  onDestroy(() => observer && observer.disconnect())
 
   // Build book-like blocks: paragraphs of text and standalone subtitles
   type Block =
@@ -902,8 +659,8 @@
       <ul class="sentences" aria-live="polite">
         {#each Array(6) as _, _i}
           <li class="sentence skeleton space-y-2">
-            <div class="skeleton-line w-11/12 h-3 rounded bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 animate-pulse" />
-            <div class="skeleton-line w-2/3 h-3 rounded bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 animate-pulse" />
+            <div class="skeleton-line w-11/12 h-3 rounded bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 animate-pulse"></div>
+            <div class="skeleton-line w-2/3 h-3 rounded bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 animate-pulse"></div>
           </li>
         {/each}
       </ul>
@@ -963,15 +720,6 @@
   {/if}
 
   
-  <nav class="pagination flex justify-center items-center gap-4 mt-4" aria-label="Page navigation">
-    <button class="btn btn-outline h-8 px-3 rounded border border-slate-300 text-slate-700 disabled:opacity-40 inline-flex items-center gap-1" type="button" aria-label="Previous page" on:click={previousPage} disabled={prevStarts.length === 0 || loading}>
-      <span class="icon inline-flex items-center"><ChevronLeft size={16} /></span>
-      <span class="btn-label">Previous</span>
-    </button>
-    <span class="page-info rate text-sm text-slate-600">Rate: {rateDisplay}</span>
-    <button class="btn btn-outline h-8 px-3 rounded border border-slate-300 text-slate-700 disabled:opacity-40 inline-flex items-center gap-1" type="button" aria-label="Next page" on:click={nextPage} disabled={!canNext || loading}>
-      <span class="btn-label">Next</span>
-      <span class="icon inline-flex items-center"><ChevronRight size={16} /></span>
-    </button>
-  </nav>
+  <div class="mt-4 text-center text-sm text-slate-600">Rate: {rateDisplay}</div>
+  <div bind:this={sentinel} class="infinite-sentinel h-2" aria-hidden="true"></div>
 </main>
