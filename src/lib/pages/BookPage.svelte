@@ -36,7 +36,11 @@
   const WORD_TOOLTIP_MS = 5000 // match sentence duration for placeholder
 
   let readerEl: HTMLElement | null = null
+  let scrollProgress = 0
   let wordsPerPage = 0
+  let pageBoundaries: Set<number> = new Set()
+  const boundaryEls: Record<number, HTMLElement | null> = {}
+  const pageBoundaryMap: Record<number, number> = {}
   let sentenceClickCountForRequest = 0
   let lastLoadCompletedAt: number | null = null
   let wordClickCountForRequest = 0
@@ -66,10 +70,14 @@
 
   // Load a page from API. start===0 replaces content; otherwise responses are appended.
   async function loadPage(start = 0, charCountParam?: number) {
-    loading = true
+    const isInitial = start === 0
+    if (isInitial) loading = true
     error = null
     // If loading the first chunk, replace; otherwise append
-    if (start === 0) sentences = []
+    if (isInitial) {
+      sentences = []
+      pageBoundaries = new Set()
+    }
     // clear transient word render cache (recomputed lazily)
     try {
       // Compute telemetry: seconds since last completed page load
@@ -127,6 +135,11 @@
           currentStart = start
         } else {
           const beforeLen = sentences.length
+          // record soft page boundary at the index where new chunk begins
+          pageBoundaries.add(beforeLen)
+          pageBoundaries = new Set(pageBoundaries)
+          // map the sentence array index to the API startSentenceNo requested
+          pageBoundaryMap[beforeLen] = start
           sentences = sentences.concat(newSentences)
           console.debug('[BookPage] 📥 Appended sentences', {
             fetched: newSentences.length,
@@ -138,6 +151,8 @@
         // update pagination state (lastEnd always moves forward if we received anything)
         if (newSentences.length > 0) {
           lastEnd = res.endSentenceNo
+          // backend provided content -> allow loading next
+          canNext = true
         }
       // Important: render the reader content now so measurement can find it
       loading = false
@@ -150,7 +165,7 @@
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : 'Failed to load text'
     } finally {
-      loading = false
+      if (isInitial) loading = false
       lastLoadCompletedAt = Date.now()
     }
   }
@@ -170,7 +185,7 @@
     if (!canNext && sentences.length > 0) return
     loadingMore = true
   const nextStart = lastEnd + 1
-  await loadPage(nextStart)
+  await loadPage(nextStart, getCharCountForViewport())
     loadingMore = false
   }
 
@@ -373,7 +388,7 @@
     ).catch(() => {})
 
   // Re-load current page with same start & charCount using updated rate (force fresh fetch)
-  await loadPage(currentStart)
+  await loadPage(currentStart, getCharCountForViewport())
   }
 
   // Ensure tooltip stays within viewport / reader container
@@ -427,7 +442,109 @@
     } catch {
       /* ignore localStorage */
     }
+    // initial load: compute charCount from viewport size and request first chunk
+    try {
+      const charCount = getCharCountForViewport()
+      await loadPage(0, charCount)
+    } catch (e) {
+      // fallback to calling without charCount
+      await loadPage(0)
+    }
+
+    // wait for DOM to update so sentinel binds inside readerEl
+    await tick()
+    // setup scroll listener on the reader element and init observer
+    if (readerEl) {
+      readerEl.addEventListener('scroll', updateScrollProgressDebounced, { passive: true })
+      // initial progress calc
+      updateScrollProgressDebounced()
+    }
+    initInfiniteObserver()
   })
+
+  onDestroy(() => {
+    if (readerEl) readerEl.removeEventListener('scroll', updateScrollProgressDebounced)
+  })
+
+  // Compute a conservative charCount based on viewport breakpoint sizing
+  // using simple breakpoints similar to sm/md/lg. Return approximate
+  // character count to pass to backend.
+  function getCharCountForViewport(): number {
+    // Use readerEl bounds when available, otherwise approximate from window
+    const width = readerEl ? readerEl.clientWidth : (typeof window !== 'undefined' ? window.innerWidth : 800)
+    // Breakpoints (approx): phone <= 640, md <= 1024, lg > 1024
+    // Assign target character counts per viewport category. Tuned conservative values.
+    if (width <= 640) return 1500
+    if (width <= 1024) return 3000
+    return 4500
+  }
+
+  function updateScrollProgress() {
+    if (!readerEl) {
+      scrollProgress = 0
+      return
+    }
+    const el = readerEl
+    const scrollTop = el.scrollTop
+    const scrollHeight = el.scrollHeight
+    const clientHeight = el.clientHeight
+    const max = Math.max(1, scrollHeight - clientHeight)
+    const pct = Math.max(0, Math.min(100, Math.round((scrollTop / max) * 100)))
+    scrollProgress = pct
+  }
+
+  // Debounced worker to check near-bottom and load next when within N lines of bottom
+  let _scrollDebounceTimer: number | null = null
+  const SCROLL_DEBOUNCE_MS = 120
+  // trigger earlier: ~8 lines from bottom to be ~4-5 lines higher than previous behavior
+  const LINES_FROM_BOTTOM = 8
+  const EXTRA_TRIGGER_PX = 12
+  const SCROLL_TRIGGER_COOLDOWN_MS = 800
+  let _lastScrollTriggerAt = 0
+
+  function checkAndLoadNearBottom() {
+    if (!readerEl) return
+    try {
+      const el = readerEl
+      const scrollTop = el.scrollTop
+      const clientHeight = el.clientHeight
+      const scrollHeight = el.scrollHeight
+      const distanceFromBottom = Math.max(0, scrollHeight - (scrollTop + clientHeight))
+
+      // compute line-height in px; fallback to 20px if not parseable
+      const cs = window.getComputedStyle(el)
+      let lineHeight = parseFloat(cs.lineHeight || '')
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+        const fontSize = parseFloat(cs.fontSize || '') || 16
+        lineHeight = Math.round(fontSize * 1.25)
+      }
+
+  const thresholdPx = LINES_FROM_BOTTOM * lineHeight + EXTRA_TRIGGER_PX
+      if (distanceFromBottom <= thresholdPx) {
+        const now = Date.now()
+        if (now - _lastScrollTriggerAt < SCROLL_TRIGGER_COOLDOWN_MS) return
+        _lastScrollTriggerAt = now
+        // trigger load: prefer mapping-aware loadPage if there's a known next start, otherwise loadMore
+        if (lastEnd && lastEnd > 0) {
+          // request next chunk using lastEnd
+          void loadPage(lastEnd + 1, getCharCountForViewport()).catch(() => {})
+        } else {
+          void loadMore().catch(() => {})
+        }
+      }
+    } catch (e) {
+      console.debug('[BookPage] checkAndLoadNearBottom error', e)
+    }
+  }
+
+  function updateScrollProgressDebounced() {
+    updateScrollProgress()
+    if (_scrollDebounceTimer) window.clearTimeout(_scrollDebounceTimer)
+    _scrollDebounceTimer = window.setTimeout(() => {
+      _scrollDebounceTimer = null
+      checkAndLoadNearBottom()
+    }, SCROLL_DEBOUNCE_MS) as unknown as number
+  }
 
   // Intersection observer sentinel (bottom marker)
   let sentinel: HTMLElement | null = null
@@ -439,20 +556,40 @@
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            // Small delay to allow UI settle
-            loadMore()
+            const el = entry.target as HTMLElement
+            // determine the boundary index by searching boundaryEls
+            const idx = Number(Object.entries(boundaryEls).find(([k, v]) => v === el)?.[0])
+            if (!Number.isFinite(idx)) continue
+            // unobserve this boundary to avoid duplicate triggers
+            observer?.unobserve(el)
+            delete boundaryEls[idx]
+            // map to API start sentence
+            const startSentenceNo = pageBoundaryMap[idx]
+            if (startSentenceNo != null) {
+              // request next chunk for this boundary
+              void loadPage(startSentenceNo, getCharCountForViewport())
+            } else {
+              // fallback to generic loadMore
+              void loadMore()
+            }
           }
         }
       },
       {
         root: readerEl,
-        rootMargin: '0px 0px 30% 0px',
-        threshold: 0.01,
+        // trigger when the boundary is within the bottom 20% of the reader
+        rootMargin: '0px 0px -20% 0px',
+        threshold: 0,
       }
     )
-    if (sentinel) observer.observe(sentinel)
+    // observe all existing boundaryEls
+    for (const k in boundaryEls) {
+      const el = boundaryEls[k]
+      if (el) observer.observe(el)
+    }
   }
   onDestroy(() => observer && observer.disconnect())
+
 
   // Build book-like blocks: paragraphs of text and standalone subtitles
   type Block =
@@ -582,11 +719,24 @@
                     <span class="jp-translation block text-[0.7rem] text-[#0a56ad] mt-1 ml-1 leading-[1.2]" aria-label="Japanese translation">{s.jp}</span>
                   {/if}
                   <span class="sr-only">.</span>
-                {/key}
-              {/each}
+                  {/key}
+                  {#if pageBoundaries.has(b.idxStart + j + 1)}
+                    <span
+                      class="inline-block w-full h-0"
+                      aria-hidden="true"
+                      data-boundary-index={b.idxStart + j + 1}
+                      bind:this={boundaryEls[b.idxStart + j + 1]}
+                    ></span>
+                  {/if}
+                {/each}
             </p>
+            <!-- inline boundary sentinels are rendered after sentences when present -->
           {/if}
         {/each}
+        {#if true}
+          <!-- sentinel inside the scrollable reader so IntersectionObserver root can observe it -->
+          <div bind:this={sentinel} class="infinite-sentinel h-2" aria-hidden="true"></div>
+        {/if}
       </article>
     </section>
   {/if}
@@ -594,4 +744,8 @@
   
   <div class="mt-4 text-center text-sm text-slate-600">Rate: {rateDisplay}</div>
   <div bind:this={sentinel} class="infinite-sentinel h-2" aria-hidden="true"></div>
+  <!-- Bottom scroll progress bar -->
+  <div aria-hidden="true" class="fixed left-0 right-0 bottom-0 h-1 bg-transparent">
+  <div class="bg-blue-500 h-1 transition-width duration-150" style={`width: ${scrollProgress}%`}></div>
+  </div>
 </main>
