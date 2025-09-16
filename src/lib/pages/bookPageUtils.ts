@@ -24,7 +24,8 @@ export function renderSentenceHTML(
   tooltipWordIdx?: number,
 ): string {
   const raw = formatSentence(s.en);
-  const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g;
+  // match words including internal apostrophes (ASCII and Unicode) and hyphens
+  const re = /[A-Za-z0-9]+(?:['’\-][A-Za-z0-9]+)*/g;
   let last = 0;
   let wi = 0;
   let out: string[] = [];

@@ -258,7 +258,8 @@
     try {
       const sentence = sentences[i];
       const rawText = sentence?.en ?? "";
-      const re = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g;
+      // match words including internal apostrophes (ASCII and Unicode) and hyphens
+      const re = /[A-Za-z0-9]+(?:['’\-][A-Za-z0-9]+)*/g;
       const words: string[] = [];
       let m: RegExpExecArray | null;
       while ((m = re.exec(rawText)) !== null) words.push(m[0]);
