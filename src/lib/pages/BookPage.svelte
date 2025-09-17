@@ -635,8 +635,8 @@
     try {
       const storedPages = readPages(bookId);
       if (storedPages && storedPages.length > 0) {
-        // flatten to sentences
-        sentences = ([] as Sentence[]).concat(...(storedPages as any));
+        // flatten to sentences (use Array.flat to preserve types)
+        sentences = storedPages.flat() as Sentence[];
         // restore selected sentences and word highlights from stored state
         selected = new Set<number>();
         bubbleVisible = new Set<number>();
