@@ -58,14 +58,14 @@ describe("BookPage", () => {
     // Wait a tick to allow initial render
     await Promise.resolve();
     const firstWord = container.querySelector(
-      ".sentenceInline span.phrase",
+      ".sentenceInline span.word",
     ) as HTMLElement | null;
     if (firstWord) {
       // Simulate clicking the word span directly
       await fireEvent.click(firstWord);
       // Tooltip should appear either with JP translation (if fixture provides) or fallback text
       const tooltip = firstWord.querySelector(
-        ".phrase-tooltip",
+        ".word-tooltip",
       ) as HTMLElement | null;
       expect(tooltip).toBeTruthy();
       expect(

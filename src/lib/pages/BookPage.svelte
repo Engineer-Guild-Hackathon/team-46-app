@@ -111,6 +111,8 @@
   const subtitleRefs: Record<number, HTMLElement | null> = {};
   let currentSubtitle: string | null = null;
   let _subtitleUpdateTimer: number | null = null;
+  // Keep a reference to the beforeunload handler so we can remove it in a top-level onDestroy
+  let _beforeUnloadHandler: (() => void) | null = null;
 
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
   async function loadPage(start = 0, charCountParam?: number) {
@@ -142,8 +144,6 @@
       // Build and log API params
       // Telemetry counters: null on first page load, then zero if no interactions.
       // Determine if this is the very first load by checking firstLoad flag and start===0.
-      const hasInteractions =
-        Object.keys(wordHighlights).length > 0 || selected.size > 0;
       const wordClickCountParam = firstLoad && start === 0 ? null : 0;
       const sentenceClickCountParam = firstLoad && start === 0 ? null : 0;
 
@@ -315,6 +315,8 @@
       try {
         const s = sentences[i];
         setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", false);
+        // keep in-memory copy in sync so later page writes don't clobber
+        (sentences[i] as any).sentenceClicked = false;
       } catch {
         /* ignore */
       }
@@ -340,6 +342,8 @@
       // persist that this sentence was clicked/opened
       try {
         setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", true);
+        // keep in-memory copy in sync so later page writes don't clobber
+        (sentences[i] as any).sentenceClicked = true;
       } catch {
         /* ignore storage errors */
       }
@@ -369,6 +373,13 @@
       try {
         const s = sentences[i];
         removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+        // update in-memory clickedWordIndex to stay in sync
+        const arr: number[] = Array.isArray(
+          (sentences[i] as any).clickedWordIndex,
+        )
+          ? ((sentences[i] as any).clickedWordIndex as number[])
+          : [];
+        (sentences[i] as any).clickedWordIndex = arr.filter((v) => v !== idx);
       } catch {
         /* ignore */
       }
@@ -410,6 +421,12 @@
           sentence?.en ?? "",
           idx,
         );
+        // update in-memory clickedWordIndex to stay in sync
+        const arr: number[] = Array.isArray((sentence as any).clickedWordIndex)
+          ? ((sentence as any).clickedWordIndex as number[])
+          : [];
+        if (!arr.includes(idx)) arr.push(idx);
+        (sentences[i] as any).clickedWordIndex = arr.sort((a, b) => a - b);
       } catch {
         /* ignore */
       }
@@ -861,6 +878,19 @@
       });
     }
     initInfiniteObserver();
+
+    // Ensure we persist the latest in-memory state on unload/navigation
+    _beforeUnloadHandler = () => {
+      try {
+        writePages(
+          bookId,
+          pagesFromSentences().map((pg) => pg.map((s) => toStoredSentence(s))),
+        );
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("beforeunload", _beforeUnloadHandler);
   });
 
   onDestroy(() => {
@@ -994,6 +1024,12 @@
     }
   }
   onDestroy(() => observer && observer.disconnect());
+  onDestroy(() => {
+    if (_beforeUnloadHandler) {
+      window.removeEventListener("beforeunload", _beforeUnloadHandler);
+      _beforeUnloadHandler = null;
+    }
+  });
   // Update the currently visible subtitle (the latest subtitle whose element
   // is within or above the top of the reader viewport). This keeps a sticky
   // header aligned with the content beneath.
