@@ -56,14 +56,12 @@
   const pageNumberForBoundary: Record<number, number> = {};
   let pageCount = 0;
 
-  // Telemetry counters
-  let sentenceClickCountForRequest = 0;
-  let wordClickCountForRequest = 0;
   let lastLoadCompletedAt: number | null = null;
   let firstLoad = true;
 
   // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null;
+  let difficultBtnPending = false;
   const rateStorageKey = (id: string) => `bookRate:${id}`;
   // Per-book top-sentence number storage (stable across loads and resizes)
   const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
@@ -149,16 +147,17 @@
             localStorage.getItem("userId")) ||
           "anonymous",
         charCount: charCountParam,
-        wordClickCount: firstLoad ? null : wordClickCountForRequest,
-        sentenceClickCount: firstLoad ? null : sentenceClickCountForRequest,
         time: timeSec,
-        rate: userRate,
+        difficultBtn: difficultBtnPending ? true : undefined,
       };
       console.debug("[BookPage] getTextPage params ->", apiParams);
 
       // Request real text page from backend
       const apiRes = await getTextPage(apiParams);
       res = apiRes;
+      // consume the pending difficult flag after the request so subsequent
+      // calls are normal unless the user presses the button again.
+      difficultBtnPending = false;
       if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
         userRate = apiRes.rate;
         try {
@@ -230,9 +229,6 @@
       // Important: render the reader content now so measurement can find it
       loading = false;
 
-      // Reset counters for the next request (we've just reported them)
-      sentenceClickCountForRequest = 0;
-      wordClickCountForRequest = 0;
       if (firstLoad) firstLoad = false;
     } catch (_e: unknown) {
       const e = _e as Error | undefined;
@@ -316,7 +312,7 @@
     // select
     selected.add(i);
     selected = new Set(selected);
-    sentenceClickCountForRequest++;
+
     // Fire sentence translation open log (first time only)
     {
       const s = sentences[i];
@@ -369,7 +365,7 @@
     set.add(idx);
     wordTooltipWordIndex[i] = idx;
     reassignWordHighlights();
-    wordClickCountForRequest++;
+
     _lastWordSelectionAt = Date.now();
     try {
       const sentence = sentences[i];
@@ -576,7 +572,12 @@
       prevRate,
     ).catch(() => {});
 
-    // Re-load current page with same start & charCount using updated rate (force fresh fetch)
+    // mark that next getTextPage should include difficultBtn=true
+    difficultBtnPending = true;
+
+    // Re-load current page with same start & charCount. The pending flag
+    // will cause the request to include `difficultBtn=true` so backend can
+    // return an updated `rate` value which we persist locally when received.
     await loadPage(currentStart, getCharCountForViewport());
   }
 
@@ -1221,11 +1222,12 @@
     </div>
     <div class="actions flex items-center gap-2">
       <Button
-        type="button"
+        onclick={handleDifficult}
         aria-label="Mark difficult"
         disabled={loading}
-        on:click={handleDifficult}>難易度を下げる</Button
       >
+        難易度を下げる
+      </Button>
     </div>
   </div>
 </main>
