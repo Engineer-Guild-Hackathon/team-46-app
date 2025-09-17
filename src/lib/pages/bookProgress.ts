@@ -214,11 +214,11 @@ export function addClickedWordIndex(
 ) {
   const pages = readPages(bookId);
   if (pages && pages.length > 0) {
-    const key = `${sentenceNo}::${(en || "").slice(0, 128)}`;
+    const key = makeKey({ sentenceNo, en });
     for (let p = 0; p < pages.length; p++) {
       for (let i = 0; i < pages[p].length; i++) {
         const item = pages[p][i];
-        if (`${item.sentenceNo}::${(item.en || "").slice(0, 128)}` === key) {
+        if (makeKey(item) === key) {
           const arr = new Set(item.clickedWordIndex || []);
           arr.add(idx);
           item.clickedWordIndex = Array.from(arr).sort((a, b) => a - b);
@@ -242,10 +242,8 @@ export function addClickedWordIndex(
 
   // fallback to flat array
   const list = readStorage(bookId);
-  const key = `${sentenceNo}::${(en || "").slice(0, 128)}`;
-  const i = list.findIndex(
-    (s) => `${s.sentenceNo}::${(s.en || "").slice(0, 128)}` === key,
-  );
+  const key = makeKey({ sentenceNo, en });
+  const i = list.findIndex((s) => makeKey(s) === key);
   if (i >= 0) {
     const item = list[i];
     const arr = new Set(item.clickedWordIndex || []);
@@ -275,11 +273,11 @@ export function removeClickedWordIndex(
 ) {
   const pages = readPages(bookId);
   if (pages && pages.length > 0) {
-    const key = `${sentenceNo}::${(en || "").slice(0, 128)}`;
+    const key = makeKey({ sentenceNo, en });
     for (let p = 0; p < pages.length; p++) {
       for (let i = 0; i < pages[p].length; i++) {
         const item = pages[p][i];
-        if (`${item.sentenceNo}::${(item.en || "").slice(0, 128)}` === key) {
+        if (makeKey(item) === key) {
           item.clickedWordIndex = (item.clickedWordIndex || []).filter(
             (v) => v !== idx,
           );
@@ -292,10 +290,8 @@ export function removeClickedWordIndex(
   }
 
   const list = readStorage(bookId);
-  const key = `${sentenceNo}::${(en || "").slice(0, 128)}`;
-  const i = list.findIndex(
-    (s) => `${s.sentenceNo}::${(s.en || "").slice(0, 128)}` === key,
-  );
+  const key = makeKey({ sentenceNo, en });
+  const i = list.findIndex((s) => makeKey(s) === key);
   if (i >= 0) {
     const item = list[i];
     item.clickedWordIndex = (item.clickedWordIndex || []).filter(
