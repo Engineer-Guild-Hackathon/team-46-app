@@ -56,8 +56,11 @@ export function readPages(bookId: string): StoredSentence[][] | null {
   if (!parsed) return null;
   // Accept legacy flat array by wrapping it in a single page
   if (Array.isArray(parsed)) return [parsed as StoredSentence[]];
-  if (typeof parsed === "object" && Array.isArray((parsed as any).pages)) {
-    return (parsed as any).pages as StoredSentence[][];
+  if (typeof parsed === "object" && parsed !== null) {
+    const asObj = parsed as Record<string, unknown>;
+    if (Array.isArray(asObj.pages)) {
+      return asObj.pages as StoredSentence[][];
+    }
   }
   return null;
 }
