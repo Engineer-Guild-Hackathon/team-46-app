@@ -19,7 +19,11 @@ describe("getTextPage", () => {
           sentenceNo: 0,
           en: "Hello world.",
           jp: "こんにちは世界。",
+          en_word: ["Hello", "world"],
           jp_word: ["こんにちは", "世界"],
+          word_difficulty: ["", ""],
+          is_paragraph_start: true,
+          is_paragraph_end: false,
         },
       ],
     };
@@ -63,7 +67,6 @@ describe("getTextPage", () => {
       wordClickCount: 2,
       sentenceClickCount: 1,
       time: 42,
-      rate: 777,
     });
 
     const url = String((fetchMock.mock.calls as unknown)[0][0]);
@@ -74,7 +77,6 @@ describe("getTextPage", () => {
     expect(url).toMatch(/wordClickCount=2/);
     expect(url).toMatch(/sentenceClickCount=1/);
     expect(url).toMatch(/time=42/);
-    expect(url).toMatch(/rate=777/);
   });
 
   it("includes jp_word entries", async () => {
@@ -87,7 +89,11 @@ describe("getTextPage", () => {
           sentenceNo: 0,
           en: "Good morning",
           jp: "おはよう",
+          en_word: ["Good", "morning"],
           jp_word: ["おはよう", ""],
+          word_difficulty: ["", ""],
+          is_paragraph_start: true,
+          is_paragraph_end: false,
         },
       ],
     };

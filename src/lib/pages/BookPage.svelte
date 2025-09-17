@@ -11,6 +11,8 @@
     en: string;
     jp?: string;
     jp_word?: string[];
+    en_word?: string[];
+    word_difficulty?: string[];
     level?: string;
     sentenceNo?: number;
   };
@@ -56,14 +58,12 @@
   const pageNumberForBoundary: Record<number, number> = {};
   let pageCount = 0;
 
-  // Telemetry counters
-  let sentenceClickCountForRequest = 0;
-  let wordClickCountForRequest = 0;
   let lastLoadCompletedAt: number | null = null;
   let firstLoad = true;
 
   // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null;
+  let difficultBtnPending = false;
   const rateStorageKey = (id: string) => `bookRate:${id}`;
   // Per-book top-sentence number storage (stable across loads and resizes)
   const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
@@ -91,7 +91,7 @@
     return lastMatch;
   }
 
-  // Word highlight / tooltip state
+  // Phrase highlight / tooltip state
   const WORD_TOOLTIP_MS = 5000;
   let wordHighlights: Record<number, Set<number>> = {};
   let wordTooltipWordIndex: Record<number, number> = {};
@@ -112,6 +112,8 @@
   const subtitleRefs: Record<number, HTMLElement | null> = {};
   let currentSubtitle: string | null = null;
   let _subtitleUpdateTimer: number | null = null;
+  // Keep a reference to the beforeunload handler so we can remove it in a top-level onDestroy
+  let _beforeUnloadHandler: (() => void) | null = null;
 
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
   async function loadPage(start = 0, charCountParam?: number) {
@@ -141,6 +143,11 @@
       };
 
       // Build and log API params
+      // Telemetry counters: null on first page load, then zero if no interactions.
+      // Determine if this is the very first load by checking firstLoad flag and start===0.
+      const wordClickCountParam = firstLoad && start === 0 ? null : 0;
+      const sentenceClickCountParam = firstLoad && start === 0 ? null : 0;
+
       const apiParams = {
         bookId,
         startSentenceNo: start,
@@ -149,16 +156,19 @@
             localStorage.getItem("userId")) ||
           "anonymous",
         charCount: charCountParam,
-        wordClickCount: firstLoad ? null : wordClickCountForRequest,
-        sentenceClickCount: firstLoad ? null : sentenceClickCountForRequest,
         time: timeSec,
-        rate: userRate,
+        difficultBtn: difficultBtnPending ? true : undefined,
+        wordClickCount: wordClickCountParam,
+        sentenceClickCount: sentenceClickCountParam,
       };
       console.debug("[BookPage] getTextPage params ->", apiParams);
 
       // Request real text page from backend
       const apiRes = await getTextPage(apiParams);
       res = apiRes;
+      // consume the pending difficult flag after the request so subsequent
+      // calls are normal unless the user presses the button again.
+      difficultBtnPending = false;
       if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
         userRate = apiRes.rate;
         try {
@@ -174,6 +184,8 @@
         en: t.en,
         jp: t.jp,
         jp_word: t.jp_word,
+        en_word: (t as any).en_word ?? (t as any).en_phrase,
+        word_difficulty: (t as any).word_difficulty,
         level: String(t.sentenceNo),
         sentenceNo: t.sentenceNo,
       }));
@@ -230,9 +242,6 @@
       // Important: render the reader content now so measurement can find it
       loading = false;
 
-      // Reset counters for the next request (we've just reported them)
-      sentenceClickCountForRequest = 0;
-      wordClickCountForRequest = 0;
       if (firstLoad) firstLoad = false;
     } catch (_e: unknown) {
       const e = _e as Error | undefined;
@@ -268,6 +277,7 @@
       en: s.en,
       jp: s.jp,
       jp_word: s.jp_word,
+      en_word: (s as any).en_word,
       clickedWordIndex: Array.isArray((s as any).clickedWordIndex)
         ? (s as any).clickedWordIndex.slice()
         : [],
@@ -307,6 +317,8 @@
       try {
         const s = sentences[i];
         setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", false);
+        // keep in-memory copy in sync so later page writes don't clobber
+        (sentences[i] as any).sentenceClicked = false;
       } catch {
         /* ignore */
       }
@@ -316,7 +328,7 @@
     // select
     selected.add(i);
     selected = new Set(selected);
-    sentenceClickCountForRequest++;
+
     // Fire sentence translation open log (first time only)
     {
       const s = sentences[i];
@@ -332,6 +344,8 @@
       // persist that this sentence was clicked/opened
       try {
         setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", true);
+        // keep in-memory copy in sync so later page writes don't clobber
+        (sentences[i] as any).sentenceClicked = true;
       } catch {
         /* ignore storage errors */
       }
@@ -340,7 +354,7 @@
   }
 
   // Interaction handlers
-  // Left click: toggle/select a word
+  // Left click: toggle/select a phrase
   function handleClick(i: number, e: MouseEvent) {
     if (e.button !== 0) return;
     // If a long-press just triggered sentence translation, suppress immediate word selection
@@ -361,6 +375,13 @@
       try {
         const s = sentences[i];
         removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+        // update in-memory clickedWordIndex to stay in sync
+        const arr: number[] = Array.isArray(
+          (sentences[i] as any).clickedWordIndex,
+        )
+          ? ((sentences[i] as any).clickedWordIndex as number[])
+          : [];
+        (sentences[i] as any).clickedWordIndex = arr.filter((v) => v !== idx);
       } catch {
         /* ignore */
       }
@@ -369,17 +390,61 @@
     set.add(idx);
     wordTooltipWordIndex[i] = idx;
     reassignWordHighlights();
-    wordClickCountForRequest++;
+
     _lastWordSelectionAt = Date.now();
     try {
       const sentence = sentences[i];
       const rawText = sentence?.en ?? "";
-      // match words including internal apostrophes (ASCII and Unicode) and hyphens
-      const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
-      const words: string[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(rawText)) !== null) words.push(m[0]);
-      const wordValue = words[idx] ?? String(idx);
+      // Prefer phrase text if provided; otherwise compute word by regex
+      let wordValue: string | undefined;
+      const phrases = (sentence as any)?.en_word as string[] | undefined;
+      if (phrases && phrases[idx] != null) {
+        wordValue = String(phrases[idx]);
+      } else {
+        const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+        const words: string[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(rawText)) !== null) words.push(m[0]);
+        wordValue = words[idx];
+      }
+      if (!wordValue) wordValue = String(idx);
+      // Append difficulty if available for this index in the form "{word},{difficulty}"
+      const diffs = (sentence as any)?.word_difficulty as string[] | undefined;
+      if (diffs && diffs.length > 0) {
+        let difficulty: string | undefined;
+        const phrasesArr = (sentence as any)?.en_word as string[] | undefined;
+        // Determine if difficulties are phrase-aligned or base-word-aligned
+        if (phrasesArr && diffs.length === phrasesArr.length) {
+          difficulty = diffs[idx];
+        } else {
+          // Try to align by base words using the same regex as rendering
+          const baseWordRe = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+          const baseWords: string[] = [];
+          let mm: RegExpExecArray | null;
+          while ((mm = baseWordRe.exec(rawText)) !== null)
+            baseWords.push(mm[0]);
+          if (diffs.length === baseWords.length && phrasesArr) {
+            // Build lens of phrase -> number of base words
+            const lens = phrasesArr.map((p) => {
+              baseWordRe.lastIndex = 0;
+              let c = 0;
+              while ((mm = baseWordRe.exec(p)) !== null) c++;
+              return Math.max(1, c);
+            });
+            const start = lens.slice(0, idx).reduce((a, b) => a + b, 0);
+            const len = lens[idx] ?? 1;
+            const slice = diffs.slice(start, start + len);
+            // choose first non-empty difficulty as representative
+            difficulty = slice.find((d) => d != null && String(d).length > 0);
+            // fallback to last if all empty
+            if (difficulty == null && slice.length > 0)
+              difficulty = slice[slice.length - 1];
+          }
+        }
+        if (difficulty != null) {
+          wordValue = `${wordValue},${String(difficulty)}`;
+        }
+      }
       void logOpenWord(
         (typeof localStorage !== "undefined" &&
           localStorage.getItem("userId")) ||
@@ -395,6 +460,12 @@
           sentence?.en ?? "",
           idx,
         );
+        // update in-memory clickedWordIndex to stay in sync
+        const arr: number[] = Array.isArray((sentence as any).clickedWordIndex)
+          ? ((sentence as any).clickedWordIndex as number[])
+          : [];
+        if (!arr.includes(idx)) arr.push(idx);
+        (sentences[i] as any).clickedWordIndex = arr.sort((a, b) => a - b);
       } catch {
         /* ignore */
       }
@@ -576,7 +647,12 @@
       prevRate,
     ).catch(() => {});
 
-    // Re-load current page with same start & charCount using updated rate (force fresh fetch)
+    // mark that next getTextPage should include difficultBtn=true
+    difficultBtnPending = true;
+
+    // Re-load current page with same start & charCount. The pending flag
+    // will cause the request to include `difficultBtn=true` so backend can
+    // return an updated `rate` value which we persist locally when received.
     await loadPage(currentStart, getCharCountForViewport());
   }
 
@@ -841,6 +917,19 @@
       });
     }
     initInfiniteObserver();
+
+    // Ensure we persist the latest in-memory state on unload/navigation
+    _beforeUnloadHandler = () => {
+      try {
+        writePages(
+          bookId,
+          pagesFromSentences().map((pg) => pg.map((s) => toStoredSentence(s))),
+        );
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("beforeunload", _beforeUnloadHandler);
   });
 
   onDestroy(() => {
@@ -974,6 +1063,12 @@
     }
   }
   onDestroy(() => observer && observer.disconnect());
+  onDestroy(() => {
+    if (_beforeUnloadHandler) {
+      window.removeEventListener("beforeunload", _beforeUnloadHandler);
+      _beforeUnloadHandler = null;
+    }
+  });
   // Update the currently visible subtitle (the latest subtitle whose element
   // is within or above the top of the reader viewport). This keeps a sticky
   // header aligned with the content beneath.
@@ -1221,11 +1316,12 @@
     </div>
     <div class="actions flex items-center gap-2">
       <Button
-        type="button"
+        onclick={handleDifficult}
         aria-label="Mark difficult"
         disabled={loading}
-        on:click={handleDifficult}>難易度を下げる</Button
       >
+        難易度を下げる
+      </Button>
     </div>
   </div>
 </main>

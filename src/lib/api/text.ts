@@ -8,7 +8,14 @@ export interface TextItem {
   sentenceNo: number;
   en: string;
   jp: string;
+  en_word: string[];
   jp_word: string[];
+  // Optional phrase-level segmentation (new backend shape)
+  en_phrase?: string[];
+  jp_phrase?: string[];
+  word_difficulty: string[];
+  is_paragraph_start: boolean;
+  is_paragraph_end: boolean;
 }
 
 export interface GetTextPageParams {
@@ -16,10 +23,11 @@ export interface GetTextPageParams {
   startSentenceNo?: number;
   userId?: string;
   charCount?: number;
+  // Optional telemetry params
   wordClickCount?: number | null;
   sentenceClickCount?: number | null;
   time?: number | null;
-  rate?: number | null;
+  difficultBtn?: boolean | null;
 }
 
 export interface GetTextPageResponse {
@@ -40,7 +48,7 @@ export async function getTextPage(
     wordClickCount,
     sentenceClickCount,
     time,
-    rate,
+    difficultBtn,
   } = params;
 
   // The backend expects these as query params. We forward them as-is.
@@ -52,6 +60,6 @@ export async function getTextPage(
     wordClickCount,
     sentenceClickCount,
     time,
-    rate,
+    difficultBtn,
   });
 }

@@ -53,7 +53,7 @@ describe("BookPage", () => {
     }
   });
 
-  it("shows word-level tooltip with translation or fallback", async () => {
+  it("shows phrase-level tooltip with translation or fallback", async () => {
     const { container } = render(BookPage, { bookId: "test" });
     // Wait a tick to allow initial render
     await Promise.resolve();
