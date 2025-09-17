@@ -1,4 +1,9 @@
 <script lang="ts">
+  /**
+   * BookPage.svelte
+   * Reader view: renders sentences, supports word highlights and sentence
+   * translation toggles, infinite loading, and resume-from-localStorage.
+   */
   import { onMount, tick, onDestroy } from "svelte";
   // Local sentence type
   type Sentence = {
@@ -46,7 +51,7 @@
   let readerEl: HTMLElement | null = null;
   let _wordsPerPage = 0;
 
-  // Page boundary tracking (for mapping appended chunks)
+  // Page boundary tracking (maps in-memory index -> API start sentence)
   let pageBoundaries: Set<number> = new Set();
   const boundaryEls: Record<number, HTMLElement | null> = {};
   const pageBoundaryMap: Record<number, number> = {};
@@ -85,9 +90,7 @@
   let currentSubtitle: string | null = null;
   let _subtitleUpdateTimer: number | null = null;
 
-  /**
-   * Fetch a page of sentences. start===0 replaces content; otherwise append.
-   */
+  /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
   async function loadPage(start = 0, charCountParam?: number) {
     const isInitial = start === 0;
     if (isInitial) loading = true;
@@ -416,8 +419,7 @@
     }
   }
 
-  // Cancel all pending touch long-press timers (used when the user scrolls or
-  // moves substantially so we don't accidentally trigger long-press behavior)
+  // Cancel all pending touch long-press timers
   function cancelAllTouchPresses() {
     for (const _k in touchPresses) {
       const t = touchPresses[_k];

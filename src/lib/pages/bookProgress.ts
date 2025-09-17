@@ -1,5 +1,10 @@
-// Helper utilities to persist per-book sentence/word click progress in localStorage.
-// Keeps storage logic out of the page component to avoid over-population.
+/**
+ * bookProgress.ts
+ * Utilities to persist per-book sentence and word click state in localStorage.
+ * Storage format: { pages: StoredSentence[][] } (backwards-compatible with
+ * a legacy flat StoredSentence[]). The helpers keep persistence logic
+ * outside of UI components.
+ */
 
 type StoredSentence = {
   type: "text" | "subtitle";
@@ -49,7 +54,7 @@ export function readPages(bookId: string): StoredSentence[][] | null {
   const raw = localStorage.getItem(storageKey(bookId));
   const parsed = safeParse(raw);
   if (!parsed) return null;
-  // If previously stored as flat array, wrap in single page
+  // Accept legacy flat array by wrapping it in a single page
   if (Array.isArray(parsed)) return [parsed as StoredSentence[]];
   if (typeof parsed === "object" && Array.isArray((parsed as any).pages)) {
     return (parsed as any).pages as StoredSentence[][];
@@ -71,7 +76,11 @@ function makeKey(s: { sentenceNo?: number; en?: string }) {
   return `${s.sentenceNo ?? "-"}::${(s.en || "").slice(0, 128)}`;
 }
 
-/** Merge freshly-fetched sentences with saved state. */
+/**
+ * Merge freshly-fetched sentences with any saved UI state. If page-based
+ * storage exists, we prefer it; otherwise we read the legacy flat array and
+ * upgrade it when appropriate.
+ */
 export function mergeWithSavedSentences(
   bookId: string,
   incoming: Array<{
@@ -114,7 +123,7 @@ export function mergeWithSavedSentences(
   }
 
   // If there was no page-based storage (we only read a flat array), persist
-  // the merged flat list so older storage is upgraded to a pages format.
+  // the merged flat list so older storage is upgraded to the pages format.
   if (!pages || pages.length === 0) {
     try {
       writeStorage(bookId, merged);
@@ -126,7 +135,7 @@ export function mergeWithSavedSentences(
   return merged;
 }
 
-/** Upsert helpers to record sentence/word clicks. */
+// Upsert helpers to record sentence/word clicks.
 function upsert(
   bookId: string,
   patch: Partial<StoredSentence> & { sentenceNo: number; en: string },
@@ -181,7 +190,7 @@ function upsert(
     };
     list.push(entry);
   }
-  // persist as single-page pages structure
+  // Persist as single-page pages structure (upgrade legacy format)
   writePages(bookId, [list]);
 }
 
