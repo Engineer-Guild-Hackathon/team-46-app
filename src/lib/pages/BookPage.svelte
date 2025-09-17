@@ -12,7 +12,7 @@
     jp?: string;
     jp_word?: string[];
     en_word?: string[];
-  word_difficulty?: string[];
+    word_difficulty?: string[];
     level?: string;
     sentenceNo?: number;
   };
@@ -185,7 +185,7 @@
         jp: t.jp,
         jp_word: t.jp_word,
         en_word: (t as any).en_word ?? (t as any).en_phrase,
-  word_difficulty: (t as any).word_difficulty,
+        word_difficulty: (t as any).word_difficulty,
         level: String(t.sentenceNo),
         sentenceNo: t.sentenceNo,
       }));
@@ -421,7 +421,8 @@
           const baseWordRe = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
           const baseWords: string[] = [];
           let mm: RegExpExecArray | null;
-          while ((mm = baseWordRe.exec(rawText)) !== null) baseWords.push(mm[0]);
+          while ((mm = baseWordRe.exec(rawText)) !== null)
+            baseWords.push(mm[0]);
           if (diffs.length === baseWords.length && phrasesArr) {
             // Build lens of phrase -> number of base words
             const lens = phrasesArr.map((p) => {
@@ -436,7 +437,8 @@
             // choose first non-empty difficulty as representative
             difficulty = slice.find((d) => d != null && String(d).length > 0);
             // fallback to last if all empty
-            if (difficulty == null && slice.length > 0) difficulty = slice[slice.length - 1];
+            if (difficulty == null && slice.length > 0)
+              difficulty = slice[slice.length - 1];
           }
         }
         if (difficulty != null) {
