@@ -1,4 +1,9 @@
 <script lang="ts">
+  /**
+   * BookPage.svelte
+   * Reader view: renders sentences, supports word highlights and sentence
+   * translation toggles, infinite loading, and resume-from-localStorage.
+   */
   import { onMount, tick, onDestroy } from "svelte";
   // Local sentence type
   type Sentence = {
@@ -10,10 +15,15 @@
     sentenceNo?: number;
   };
   import { getTextPage } from "$lib/api/text";
+  import { selectWordAtPointer as selectWordAtPointerHelper } from "$lib/pages/bookPageUtils";
   import {
-    renderSentenceHTML,
-    selectWordAtPointer as selectWordAtPointerHelper,
-  } from "$lib/pages/bookPageUtils";
+    mergeWithSavedSentences,
+    setSentenceClicked,
+    addClickedWordIndex,
+    removeClickedWordIndex,
+    readPages,
+    writePages,
+  } from "$lib/pages/bookProgress";
   import { ChevronLeft } from "@lucide/svelte";
   import Button from "$lib/components/ui/button/button.svelte";
   import {
@@ -21,6 +31,7 @@
     logDifficultBtn,
     logOpenWord,
   } from "$lib/api/logging";
+  import SentenceInline from "$lib/pages/components/SentenceInline.svelte";
 
   export let bookId: string;
 
@@ -38,7 +49,7 @@
   let readerEl: HTMLElement | null = null;
   let _wordsPerPage = 0;
 
-  // Page boundary tracking (for mapping appended chunks)
+  // Page boundary tracking (maps in-memory index -> API start sentence)
   let pageBoundaries: Set<number> = new Set();
   const boundaryEls: Record<number, HTMLElement | null> = {};
   const pageBoundaryMap: Record<number, number> = {};
@@ -54,6 +65,31 @@
   // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null;
   const rateStorageKey = (id: string) => `bookRate:${id}`;
+  // Per-book top-sentence number storage (stable across loads and resizes)
+  const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
+  let _scrollSaveTimer: number | null = null;
+  const SCROLL_SAVE_DEBOUNCE = 200;
+
+  function getTopVisibleSentenceIndex(): number | null {
+    if (!readerEl) return null;
+    const readerRect = readerEl.getBoundingClientRect();
+    // prefer the first element whose top is at-or-below the reader top + 1px
+    for (let i = 0; i < sentences.length; i++) {
+      const el = elRefs[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.top >= readerRect.top + 1) return i;
+    }
+    // fallback: find the last element whose top is <= reader top
+    let lastMatch: number | null = null;
+    for (let i = 0; i < sentences.length; i++) {
+      const el = elRefs[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.top <= readerRect.top + 1) lastMatch = i;
+    }
+    return lastMatch;
+  }
 
   // Word highlight / tooltip state
   const WORD_TOOLTIP_MS = 5000;
@@ -77,9 +113,7 @@
   let currentSubtitle: string | null = null;
   let _subtitleUpdateTimer: number | null = null;
 
-  /**
-   * Fetch a page of sentences. start===0 replaces content; otherwise append.
-   */
+  /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
   async function loadPage(start = 0, charCountParam?: number) {
     const isInitial = start === 0;
     if (isInitial) loading = true;
@@ -134,8 +168,8 @@
         }
       }
 
-      // Map to local Sentence shape
-      const newSentences = res.text.map((t) => ({
+      // Map to local Sentence shape and merge any saved progress
+      const mapped = res.text.map((t) => ({
         type: t.type,
         en: t.en,
         jp: t.jp,
@@ -143,10 +177,20 @@
         level: String(t.sentenceNo),
         sentenceNo: t.sentenceNo,
       }));
+      const newSentences = mergeWithSavedSentences(
+        bookId,
+        mapped,
+      ) as Sentence[];
       if (start === 0) {
         sentences = newSentences;
         currentStart = start;
         pageCount = 1;
+        // persist initial fetch as first page
+        try {
+          writePages(bookId, [[...sentences].map((s) => toStoredSentence(s))]);
+        } catch {
+          /* ignore */
+        }
       } else {
         const beforeLen = sentences.length;
         // record soft page boundary at the index where new chunk begins
@@ -165,6 +209,17 @@
           startSentenceNoRequested: start,
           page: pageCount,
         });
+        // persist updated pages after append
+        try {
+          writePages(
+            bookId,
+            pagesFromSentences().map((pg) =>
+              pg.map((s) => toStoredSentence(s)),
+            ),
+          );
+        } catch {
+          /* ignore */
+        }
       }
       // update pagination state (lastEnd always moves forward if we received anything)
       if (newSentences.length > 0) {
@@ -188,6 +243,38 @@
     }
   }
 
+  // Convert current sentences and pageBoundaries into pages for persistence.
+  function pagesFromSentences(): Sentence[][] {
+    if (!sentences || sentences.length === 0) return [];
+    const boundaries = Array.from(pageBoundaries).sort((a, b) => a - b);
+    const pages: Sentence[][] = [];
+    let start = 0;
+    for (const b of boundaries) {
+      pages.push(sentences.slice(start, b));
+      start = b;
+    }
+    // last page
+    pages.push(sentences.slice(start));
+    return pages;
+  }
+
+  // Helper: convert our in-memory Sentence to the persisted StoredSentence shape
+  // We intentionally read persisted fields if present (mergeWithSavedSentences
+  // will attach them), and default to sensible empties otherwise.
+  function toStoredSentence(s: Sentence) {
+    return {
+      type: s.type,
+      sentenceNo: s.sentenceNo ?? -1,
+      en: s.en,
+      jp: s.jp,
+      jp_word: s.jp_word,
+      clickedWordIndex: Array.isArray((s as any).clickedWordIndex)
+        ? (s as any).clickedWordIndex.slice()
+        : [],
+      sentenceClicked: !!(s as any).sentenceClicked,
+    };
+  }
+
   // Test hook (Vitest): allow forcing a next load from tests
   if (typeof window !== "undefined" && (window as any).__VITEST__) {
     (window as any).__bookPageForceNext = () => {
@@ -208,12 +295,30 @@
   }
 
   function toggleSentence(i: number) {
-    const isNew = !selected.has(i);
-    if (isNew) selected.add(i);
+    const wasSelected = selected.has(i);
+    if (wasSelected) {
+      // unselect
+      selected.delete(i);
+      selected = new Set(selected);
+      // hide bubble when unselecting
+      bubbleVisible.delete(i);
+      bubbleVisible = new Set(bubbleVisible);
+      // persist deselect
+      try {
+        const s = sentences[i];
+        setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", false);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    // select
+    selected.add(i);
     selected = new Set(selected);
     sentenceClickCountForRequest++;
     // Fire sentence translation open log (first time only)
-    if (isNew) {
+    {
       const s = sentences[i];
       const _sentenceNo = s?.sentenceNo ?? i; // currently unused; kept for potential future feedback extension
       // Fire-and-forget; swallow errors to avoid test noise / UI disruption
@@ -224,6 +329,12 @@
         userRate ?? 0,
         s?.sentenceNo ?? i,
       ).catch(() => {});
+      // persist that this sentence was clicked/opened
+      try {
+        setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", true);
+      } catch {
+        /* ignore storage errors */
+      }
     }
     showBubble(i);
   }
@@ -246,6 +357,13 @@
       if (set.size === 0) delete wordHighlights[i];
       reassignWordHighlights();
       hideWordTooltip(i);
+      // remove persisted clicked word index
+      try {
+        const s = sentences[i];
+        removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+      } catch {
+        /* ignore */
+      }
       return;
     }
     set.add(idx);
@@ -269,6 +387,17 @@
         userRate ?? 0,
         wordValue,
       );
+      // persist clicked word index for resume
+      try {
+        addClickedWordIndex(
+          bookId,
+          sentence?.sentenceNo ?? i,
+          sentence?.en ?? "",
+          idx,
+        );
+      } catch {
+        /* ignore */
+      }
     } catch {
       /* ignore word log */
     }
@@ -278,6 +407,17 @@
   // Context menu (right-click): toggle sentence translation
   function handleContextMenu(i: number, e: MouseEvent) {
     e.preventDefault();
+    // If a long-press already toggled this sentence, or a long-press is
+    // currently armed for this sentence, suppress the following contextmenu
+    // to avoid an immediate double-toggle.
+    const press = touchPresses[i];
+    if (
+      (suppressClickForSentence === i && Date.now() - lastLongPressAt < 600) ||
+      (press && press.triggered)
+    ) {
+      suppressClickForSentence = null;
+      return;
+    }
     toggleSentence(i);
   }
 
@@ -297,7 +437,7 @@
 
   // --- Touch long press (simulate right click) ---
   function touchPointerDown(i: number, e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
+    // Start a long-press timer for primary pointers (touch or mouse).
     if ((e as any).isPrimary === false) return;
     const existing = touchPresses[i];
     if (existing && existing.timer) window.clearTimeout(existing.timer);
@@ -306,25 +446,32 @@
       startY: e.clientY,
       triggered: false,
       timer: window.setTimeout(() => {
-        // Long press elapsed -> toggle sentence translation (was word highlight)
-        toggleSentence(i);
-        suppressClickForSentence = i; // suppress immediate word selection after releasing
-        lastLongPressAt = Date.now();
-        touchPresses[i].triggered = true;
+        // Long press elapsed -> FIRE the long-press immediately so the UI
+        // responds while the user is still holding the finger/mouse.
         try {
-          window.getSelection()?.removeAllRanges();
+          touchPresses[i].triggered = true;
+          console.debug("[BookPage] long-press fired", { sentenceIndex: i });
+          // Perform the toggle now (instant feedback)
+          toggleSentence(i);
+          // Suppress the following click/contextmenu that the browser may emit
+          // after pointerup so we don't get a duplicate toggle.
+          suppressClickForSentence = i;
+          lastLongPressAt = Date.now();
+          // clear any text selection that may result from the press
+          try {
+            window.getSelection()?.removeAllRanges();
+          } catch {
+            /* ignore */
+          }
         } catch {
-          /* ignore selection */
+          /* ignore */
         }
-        console.debug("[BookPage] touch long-press sentence translation", {
-          sentenceIndex: i,
-        });
       }, LONG_PRESS_TOUCH_MS),
     };
   }
 
   function touchPointerMove(i: number, e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
+    // Cancel long-press if pointer moved too far (for touch or mouse drag)
     const press = touchPresses[i];
     if (!press || press.triggered) return;
     const dx = e.clientX - press.startX;
@@ -336,25 +483,26 @@
   }
 
   function touchPointerUp(i: number, e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
     const press = touchPresses[i];
     if (!press) return;
     window.clearTimeout(press.timer);
-    const wasTriggered = press.triggered;
+    const wasArmed = press.triggered;
+    // remove the stored press entry immediately
     delete touchPresses[i];
-    if (wasTriggered) {
-      // prevent any stray selection
+    if (wasArmed) {
+      // The long-press already fired on timer -> do NOT toggle again here.
+      // Keep suppressClickForSentence in place (set when the timer fired)
+      // and prevent default to avoid accidental selection.
       try {
         window.getSelection()?.removeAllRanges();
       } catch {
-        /* ignore selection */
+        /* ignore */
       }
       e.preventDefault?.();
     }
   }
 
-  // Cancel all pending touch long-press timers (used when the user scrolls or
-  // moves substantially so we don't accidentally trigger long-press behavior)
+  // Cancel all pending touch long-press timers
   function cancelAllTouchPresses() {
     for (const _k in touchPresses) {
       const t = touchPresses[_k];
@@ -505,13 +653,149 @@
     } catch {
       /* ignore localStorage */
     }
-    // initial load: compute charCount from viewport size and request first chunk
+    // If we have stored pages for this book, use them and skip the API initial call.
     try {
-      const charCount = getCharCountForViewport();
-      await loadPage(0, charCount);
-    } catch (_e) {
-      // fallback to calling without charCount
-      await loadPage(0);
+      const storedPages = readPages(bookId);
+      if (storedPages && storedPages.length > 0) {
+        // flatten to sentences (use Array.flat to preserve types)
+        sentences = storedPages.flat() as Sentence[];
+        // restore selected sentences and word highlights from stored state
+        selected = new Set<number>();
+        bubbleVisible = new Set<number>();
+        const wh: Record<number, Set<number>> = {};
+        for (let i = 0; i < sentences.length; i++) {
+          const s = sentences[i] as any;
+          if (s.sentenceClicked) {
+            selected.add(i);
+            bubbleVisible.add(i);
+          }
+          if (
+            Array.isArray(s.clickedWordIndex) &&
+            s.clickedWordIndex.length > 0
+          ) {
+            wh[i] = new Set(s.clickedWordIndex as number[]);
+          }
+        }
+        wordHighlights = wh;
+        // recompute pageBoundaries and pageCount
+        pageBoundaries = new Set<number>();
+        let idx = 0;
+        pageCount = storedPages.length;
+        for (let p = 0; p < storedPages.length; p++) {
+          if (p === 0) {
+            // first page starts at 0
+          } else {
+            pageBoundaries.add(idx);
+            pageNumberForBoundary[idx] = p + 1;
+          }
+          idx += storedPages[p].length;
+        }
+        lastEnd =
+          sentences.length > 0
+            ? (sentences[sentences.length - 1].sentenceNo ?? 0)
+            : 0;
+        currentStart = 0;
+        loading = false;
+        // after DOM updates, scroll to top of last page so user resumes there
+        await tick();
+        // Prefer restoring by top-visible sentence index; fall back to
+        // previous 'last page start' jump when no saved index exists.
+        let restored = false;
+        try {
+          const raw = localStorage.getItem(topSentenceStorageKey(bookId));
+          if (raw != null) {
+            const savedSentenceNo = Number(raw);
+            if (!Number.isNaN(savedSentenceNo) && readerEl) {
+              // find the current index of the saved sentence number
+              const foundIdx = sentences.findIndex(
+                (s) => (s.sentenceNo ?? -1) === savedSentenceNo,
+              );
+              if (foundIdx >= 0) {
+                // show the previous sentence so the reader can re-read a bit
+                const displayIdx = Math.max(0, foundIdx - 1);
+                const el = elRefs[displayIdx];
+                if (el) {
+                  // Temporarily disconnect observer to avoid triggering loads while we programmatically scroll
+                  try {
+                    if (observer) observer.disconnect();
+                  } catch {
+                    /* ignore */
+                  }
+                  _suppressAutoLoad = true;
+                  _lastScrollTriggerAt = Date.now();
+                  // compute delta between element top and container top and adjust scrollTop
+                  const containerRect = readerEl.getBoundingClientRect();
+                  const elRect = el.getBoundingClientRect();
+                  // Align the sentence top to the reader top with a small padding
+                  const paddingTop = 8; // show the sentence from near the top
+                  const targetScrollTop =
+                    readerEl.scrollTop +
+                    Math.round(elRect.top - containerRect.top - paddingTop);
+                  readerEl.scrollTop = targetScrollTop;
+                  window.setTimeout(() => {
+                    _suppressAutoLoad = false;
+                  }, 120);
+                  await tick();
+                  initInfiniteObserver();
+                  restored = true;
+                }
+              }
+            }
+          }
+        } catch {
+          /* ignore localStorage */
+        }
+        if (!restored) {
+          // compute index of last page start and jump there as a fallback
+          const sortedBoundaries = Array.from(pageBoundaries).sort(
+            (a, b) => a - b,
+          );
+          const lastPageStartIdx =
+            sortedBoundaries.length > 0
+              ? sortedBoundaries[sortedBoundaries.length - 1]
+              : 0;
+          const displayIdx = Math.max(0, lastPageStartIdx - 1);
+          const el = elRefs[displayIdx];
+          if (readerEl && el) {
+            try {
+              if (observer) observer.disconnect();
+            } catch {
+              /* ignore */
+            }
+            const containerRect = readerEl.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            const paddingTop = 8;
+            const targetScrollTop =
+              readerEl.scrollTop +
+              Math.round(elRect.top - containerRect.top - paddingTop);
+            _suppressAutoLoad = true;
+            _lastScrollTriggerAt = Date.now();
+            readerEl.scrollTop = targetScrollTop;
+            window.setTimeout(() => {
+              _suppressAutoLoad = false;
+            }, 120);
+            await tick();
+            initInfiniteObserver();
+          }
+        }
+      } else {
+        // initial load: compute charCount from viewport size and request first chunk
+        try {
+          const charCount = getCharCountForViewport();
+          await loadPage(0, charCount);
+        } catch (_e) {
+          // fallback to calling without charCount
+          await loadPage(0);
+        }
+      }
+    } catch (_err) {
+      // fallback to normal loading if storage read fails
+      try {
+        const charCount = getCharCountForViewport();
+        await loadPage(0, charCount);
+      } catch {
+        await loadPage(0);
+      }
     }
 
     // wait for DOM to update so sentinel binds inside readerEl
@@ -519,6 +803,30 @@
     // setup scroll listener and observer
     if (readerEl) {
       readerEl.addEventListener("scroll", updateScrollProgressDebounced, {
+        passive: true,
+      });
+      // persist top-visible sentence index (debounced)
+      const saveTopSentenceDebounced = () => {
+        if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
+        _scrollSaveTimer = window.setTimeout(() => {
+          try {
+            const idx = getTopVisibleSentenceIndex();
+            if (idx != null) {
+              const s = sentences[idx];
+              if (s && s.sentenceNo != null) {
+                localStorage.setItem(
+                  topSentenceStorageKey(bookId),
+                  String(s.sentenceNo),
+                );
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+          _scrollSaveTimer = null;
+        }, SCROLL_SAVE_DEBOUNCE) as unknown as number;
+      };
+      readerEl.addEventListener("scroll", saveTopSentenceDebounced, {
         passive: true,
       });
       // initial progress calc
@@ -533,6 +841,11 @@
       });
     }
     initInfiniteObserver();
+  });
+
+  onDestroy(() => {
+    // ensure scroll-save timer cleared
+    if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
   });
 
   onDestroy(() => {
@@ -567,8 +880,10 @@
   const EXTRA_TRIGGER_PX = 12;
   const SCROLL_TRIGGER_COOLDOWN_MS = 2500;
   let _lastScrollTriggerAt = 0;
+  let _suppressAutoLoad = false;
 
   function checkAndLoadNearBottom() {
+    if (_suppressAutoLoad) return;
     if (!readerEl) return;
     try {
       const el = readerEl;
@@ -652,11 +967,13 @@
     // observe all existing boundaryEls
     for (const _k in boundaryEls) {
       const el = boundaryEls[_k];
-      if (el) observer.observe(el);
+      // Only observe boundaries that have a mapped start sentence (from API runs).
+      // If we loaded pages from storage, pageBoundaryMap may not have an entry
+      // for these boundaries — do not observe them to avoid accidental API calls.
+      if (el && pageBoundaryMap[_k] != null) observer.observe(el);
     }
   }
   onDestroy(() => observer && observer.disconnect());
-
   // Update the currently visible subtitle (the latest subtitle whose element
   // is within or above the top of the reader viewport). This keeps a sticky
   // header aligned with the content beneath.
@@ -818,52 +1135,46 @@
               <div class="mb-4 last:mb-0">
                 {#each b.items as s, j}
                   {#key `${b.idxStart + j}`}
-                    <span
-                      role="button"
-                      tabindex="0"
-                      class="sentenceInline inline relative cursor-pointer rounded px-[0.04em] {selected.has(
-                        b.idxStart + j,
-                      )
-                        ? 'selected bg-amber-200'
-                        : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-300"
-                      bind:this={elRefs[b.idxStart + j]}
-                      on:click={(e) => handleClick(b.idxStart + j, e)}
-                      on:mousedown={(e) => handleMouseDown(b.idxStart + j, e)}
-                      on:contextmenu={(e) =>
-                        handleContextMenu(b.idxStart + j, e)}
-                      on:pointerdown={(e) =>
-                        touchPointerDown(b.idxStart + j, e)}
-                      on:pointermove={(e) =>
-                        touchPointerMove(b.idxStart + j, e)}
-                      on:touchmove|passive={() => cancelAllTouchPresses()}
-                      on:pointerup={(e) => touchPointerUp(b.idxStart + j, e)}
-                      on:keydown={(e) => {
+                    <SentenceInline
+                      idx={b.idxStart + j}
+                      {s}
+                      selected={selected.has(b.idxStart + j)}
+                      bubbleVisible={bubbleVisible.has(b.idxStart + j)}
+                      wordHighlights={wordHighlights[b.idxStart + j]}
+                      wordTooltipVisible={wordTooltipVisible[b.idxStart + j]}
+                      wordTooltipWordIndex={wordTooltipWordIndex[
+                        b.idxStart + j
+                      ]}
+                      on:sentenceClick={(ev) =>
+                        handleClick(ev.detail.idx, ev.detail.event)}
+                      on:sentenceContextmenu={(ev) =>
+                        handleContextMenu(ev.detail.idx, ev.detail.event)}
+                      on:sentenceMouseDown={(ev) =>
+                        handleMouseDown(ev.detail.idx, ev.detail.event)}
+                      on:sentencePointerDown={(ev) =>
+                        touchPointerDown(ev.detail.idx, ev.detail.event)}
+                      on:sentencePointerMove={(ev) =>
+                        touchPointerMove(ev.detail.idx, ev.detail.event)}
+                      on:sentencePointerUp={(ev) =>
+                        touchPointerUp(ev.detail.idx, ev.detail.event)}
+                      on:sentenceKeydown={(ev) => {
+                        const e = ev.detail.event as KeyboardEvent;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          toggleSentence(b.idxStart + j);
+                          toggleSentence(ev.detail.idx);
                         }
                         if (e.key === "Escape") {
                           e.preventDefault();
-                          hideBubble(b.idxStart + j);
+                          hideBubble(ev.detail.idx);
                         }
                       }}
-                      aria-pressed={selected.has(b.idxStart + j)}
-                    >
-                      {@html renderSentenceHTML(
-                        b.idxStart + j,
-                        s,
-                        wordHighlights[b.idxStart + j],
-                        wordTooltipVisible[b.idxStart + j],
-                        wordTooltipWordIndex[b.idxStart + j],
-                      )}
-                    </span>
-                    {#if bubbleVisible.has(b.idxStart + j)}
-                      <span
-                        class="jp-translation block text-[0.9rem] text-[#0a56ad] mt-1 ml-1 leading-[1.2]"
-                        aria-label="Japanese translation">{s.jp}</span
-                      >
-                    {/if}
-                    <span class="sr-only">.</span>
+                      on:mounted={(ev) => {
+                        elRefs[ev.detail.idx] = ev.detail.el;
+                      }}
+                      on:destroyed={(ev) => {
+                        delete elRefs[ev.detail.idx];
+                      }}
+                    />
                   {/key}
                   {#if pageBoundaries.has(b.idxStart + j + 1)}
                     <div
