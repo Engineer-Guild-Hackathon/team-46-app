@@ -15,10 +15,7 @@
     sentenceNo?: number;
   };
   import { getTextPage } from "$lib/api/text";
-  import {
-    renderSentenceHTML,
-    selectWordAtPointer as selectWordAtPointerHelper,
-  } from "$lib/pages/bookPageUtils";
+  import { selectWordAtPointer as selectWordAtPointerHelper } from "$lib/pages/bookPageUtils";
   import {
     mergeWithSavedSentences,
     setSentenceClicked,
@@ -251,12 +248,30 @@
   }
 
   function toggleSentence(i: number) {
-    const isNew = !selected.has(i);
-    if (isNew) selected.add(i);
+    const wasSelected = selected.has(i);
+    if (wasSelected) {
+      // unselect
+      selected.delete(i);
+      selected = new Set(selected);
+      // hide bubble when unselecting
+      bubbleVisible.delete(i);
+      bubbleVisible = new Set(bubbleVisible);
+      // persist deselect
+      try {
+        const s = sentences[i];
+        setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", false);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    // select
+    selected.add(i);
     selected = new Set(selected);
     sentenceClickCountForRequest++;
     // Fire sentence translation open log (first time only)
-    if (isNew) {
+    {
       const s = sentences[i];
       const _sentenceNo = s?.sentenceNo ?? i; // currently unused; kept for potential future feedback extension
       // Fire-and-forget; swallow errors to avoid test noise / UI disruption
@@ -269,7 +284,7 @@
       ).catch(() => {});
       // persist that this sentence was clicked/opened
       try {
-        setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "");
+        setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "", true);
       } catch {
         /* ignore storage errors */
       }
@@ -345,6 +360,17 @@
   // Context menu (right-click): toggle sentence translation
   function handleContextMenu(i: number, e: MouseEvent) {
     e.preventDefault();
+    // If a long-press already toggled this sentence, or a long-press is
+    // currently armed for this sentence, suppress the following contextmenu
+    // to avoid an immediate double-toggle.
+    const press = touchPresses[i];
+    if (
+      (suppressClickForSentence === i && Date.now() - lastLongPressAt < 600) ||
+      (press && press.triggered)
+    ) {
+      suppressClickForSentence = null;
+      return;
+    }
     toggleSentence(i);
   }
 
@@ -364,7 +390,7 @@
 
   // --- Touch long press (simulate right click) ---
   function touchPointerDown(i: number, e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
+    // Start a long-press timer for primary pointers (touch or mouse).
     if ((e as any).isPrimary === false) return;
     const existing = touchPresses[i];
     if (existing && existing.timer) window.clearTimeout(existing.timer);
@@ -373,25 +399,32 @@
       startY: e.clientY,
       triggered: false,
       timer: window.setTimeout(() => {
-        // Long press elapsed -> toggle sentence translation (was word highlight)
-        toggleSentence(i);
-        suppressClickForSentence = i; // suppress immediate word selection after releasing
-        lastLongPressAt = Date.now();
-        touchPresses[i].triggered = true;
+        // Long press elapsed -> FIRE the long-press immediately so the UI
+        // responds while the user is still holding the finger/mouse.
         try {
-          window.getSelection()?.removeAllRanges();
+          touchPresses[i].triggered = true;
+          console.debug("[BookPage] long-press fired", { sentenceIndex: i });
+          // Perform the toggle now (instant feedback)
+          toggleSentence(i);
+          // Suppress the following click/contextmenu that the browser may emit
+          // after pointerup so we don't get a duplicate toggle.
+          suppressClickForSentence = i;
+          lastLongPressAt = Date.now();
+          // clear any text selection that may result from the press
+          try {
+            window.getSelection()?.removeAllRanges();
+          } catch {
+            /* ignore */
+          }
         } catch {
-          /* ignore selection */
+          /* ignore */
         }
-        console.debug("[BookPage] touch long-press sentence translation", {
-          sentenceIndex: i,
-        });
       }, LONG_PRESS_TOUCH_MS),
     };
   }
 
   function touchPointerMove(i: number, e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
+    // Cancel long-press if pointer moved too far (for touch or mouse drag)
     const press = touchPresses[i];
     if (!press || press.triggered) return;
     const dx = e.clientX - press.startX;
@@ -403,18 +436,20 @@
   }
 
   function touchPointerUp(i: number, e: PointerEvent) {
-    if (e.pointerType !== "touch") return;
     const press = touchPresses[i];
     if (!press) return;
     window.clearTimeout(press.timer);
-    const wasTriggered = press.triggered;
+    const wasArmed = press.triggered;
+    // remove the stored press entry immediately
     delete touchPresses[i];
-    if (wasTriggered) {
-      // prevent any stray selection
+    if (wasArmed) {
+      // The long-press already fired on timer -> do NOT toggle again here.
+      // Keep suppressClickForSentence in place (set when the timer fired)
+      // and prevent default to avoid accidental selection.
       try {
         window.getSelection()?.removeAllRanges();
       } catch {
-        /* ignore selection */
+        /* ignore */
       }
       e.preventDefault?.();
     }
@@ -662,7 +697,7 @@
           await loadPage(0);
         }
       }
-    } catch (err) {
+    } catch (_err) {
       // fallback to normal loading if storage read fails
       try {
         const charCount = getCharCountForViewport();
