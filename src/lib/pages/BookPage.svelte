@@ -12,6 +12,7 @@
     jp?: string;
     jp_word?: string[];
     en_word?: string[];
+  word_difficulty?: string[];
     level?: string;
     sentenceNo?: number;
   };
@@ -184,6 +185,7 @@
         jp: t.jp,
         jp_word: t.jp_word,
         en_word: (t as any).en_word ?? (t as any).en_phrase,
+  word_difficulty: (t as any).word_difficulty,
         level: String(t.sentenceNo),
         sentenceNo: t.sentenceNo,
       }));
@@ -406,6 +408,41 @@
         wordValue = words[idx];
       }
       if (!wordValue) wordValue = String(idx);
+      // Append difficulty if available for this index in the form "{word},{difficulty}"
+      const diffs = (sentence as any)?.word_difficulty as string[] | undefined;
+      if (diffs && diffs.length > 0) {
+        let difficulty: string | undefined;
+        const phrasesArr = (sentence as any)?.en_word as string[] | undefined;
+        // Determine if difficulties are phrase-aligned or base-word-aligned
+        if (phrasesArr && diffs.length === phrasesArr.length) {
+          difficulty = diffs[idx];
+        } else {
+          // Try to align by base words using the same regex as rendering
+          const baseWordRe = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+          const baseWords: string[] = [];
+          let mm: RegExpExecArray | null;
+          while ((mm = baseWordRe.exec(rawText)) !== null) baseWords.push(mm[0]);
+          if (diffs.length === baseWords.length && phrasesArr) {
+            // Build lens of phrase -> number of base words
+            const lens = phrasesArr.map((p) => {
+              baseWordRe.lastIndex = 0;
+              let c = 0;
+              while ((mm = baseWordRe.exec(p)) !== null) c++;
+              return Math.max(1, c);
+            });
+            const start = lens.slice(0, idx).reduce((a, b) => a + b, 0);
+            const len = lens[idx] ?? 1;
+            const slice = diffs.slice(start, start + len);
+            // choose first non-empty difficulty as representative
+            difficulty = slice.find((d) => d != null && String(d).length > 0);
+            // fallback to last if all empty
+            if (difficulty == null && slice.length > 0) difficulty = slice[slice.length - 1];
+          }
+        }
+        if (difficulty != null) {
+          wordValue = `${wordValue},${String(difficulty)}`;
+        }
+      }
       void logOpenWord(
         (typeof localStorage !== "undefined" &&
           localStorage.getItem("userId")) ||

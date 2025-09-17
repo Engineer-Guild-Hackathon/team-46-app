@@ -13,6 +13,7 @@ type StoredSentence = {
   jp?: string;
   jp_word?: string[];
   en_word?: string[];
+  word_difficulty?: string[];
   // persisted UI state
   clickedWordIndex: number[];
   sentenceClicked: boolean;
@@ -94,6 +95,7 @@ export function mergeWithSavedSentences(
     jp?: string;
     jp_word?: string[];
     en_word?: string[];
+  word_difficulty?: string[];
   }>,
 ) {
   // Read existing saved sentences (prefer page-based storage).
@@ -119,6 +121,7 @@ export function mergeWithSavedSentences(
       jp: s.jp,
       jp_word: s.jp_word,
       en_word: s.en_word,
+  word_difficulty: s.word_difficulty,
       clickedWordIndex: found?.clickedWordIndex
         ? [...found.clickedWordIndex]
         : [],
@@ -168,6 +171,8 @@ function upsert(
         en: patch.en,
         jp: patch.jp,
         jp_word: patch.jp_word,
+  en_word: patch.en_word as string[] | undefined,
+  word_difficulty: patch.word_difficulty as string[] | undefined,
         clickedWordIndex: patch.clickedWordIndex ?? [],
         sentenceClicked: !!patch.sentenceClicked,
       };
@@ -191,6 +196,8 @@ function upsert(
       en: patch.en,
       jp: patch.jp,
       jp_word: patch.jp_word,
+  en_word: patch.en_word as string[] | undefined,
+  word_difficulty: patch.word_difficulty as string[] | undefined,
       clickedWordIndex: patch.clickedWordIndex ?? [],
       sentenceClicked: !!patch.sentenceClicked,
     };
