@@ -65,6 +65,31 @@
   // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null;
   const rateStorageKey = (id: string) => `bookRate:${id}`;
+  // Per-book top-sentence number storage (stable across loads and resizes)
+  const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
+  let _scrollSaveTimer: number | null = null;
+  const SCROLL_SAVE_DEBOUNCE = 200;
+
+  function getTopVisibleSentenceIndex(): number | null {
+    if (!readerEl) return null;
+    const readerRect = readerEl.getBoundingClientRect();
+    // prefer the first element whose top is at-or-below the reader top + 1px
+    for (let i = 0; i < sentences.length; i++) {
+      const el = elRefs[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.top >= readerRect.top + 1) return i;
+    }
+    // fallback: find the last element whose top is <= reader top
+    let lastMatch: number | null = null;
+    for (let i = 0; i < sentences.length; i++) {
+      const el = elRefs[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.top <= readerRect.top + 1) lastMatch = i;
+    }
+    return lastMatch;
+  }
 
   // Word highlight / tooltip state
   const WORD_TOOLTIP_MS = 5000;
@@ -651,41 +676,85 @@
         loading = false;
         // after DOM updates, scroll to top of last page so user resumes there
         await tick();
-        // compute index of last page start
-        const sortedBoundaries = Array.from(pageBoundaries).sort(
-          (a, b) => a - b,
-        );
-        const lastPageStartIdx =
-          sortedBoundaries.length > 0
-            ? sortedBoundaries[sortedBoundaries.length - 1]
-            : 0;
-        const el = elRefs[lastPageStartIdx];
-        if (readerEl && el) {
-          // Temporarily disconnect observer to avoid triggering loads while we programmatically scroll
-          try {
-            if (observer) observer.disconnect();
-          } catch {
-            /* ignore */
+        // Prefer restoring by top-visible sentence index; fall back to
+        // previous 'last page start' jump when no saved index exists.
+        let restored = false;
+        try {
+          const raw = localStorage.getItem(topSentenceStorageKey(bookId));
+          if (raw != null) {
+            const savedSentenceNo = Number(raw);
+            if (!Number.isNaN(savedSentenceNo) && readerEl) {
+              // find the current index of the saved sentence number
+              const foundIdx = sentences.findIndex(
+                (s) => (s.sentenceNo ?? -1) === savedSentenceNo,
+              );
+              if (foundIdx >= 0) {
+                // show the previous sentence so the reader can re-read a bit
+                const displayIdx = Math.max(0, foundIdx - 1);
+                const el = elRefs[displayIdx];
+                if (el) {
+                  // Temporarily disconnect observer to avoid triggering loads while we programmatically scroll
+                  try {
+                    if (observer) observer.disconnect();
+                  } catch {
+                    /* ignore */
+                  }
+                  _suppressAutoLoad = true;
+                  _lastScrollTriggerAt = Date.now();
+                  // compute delta between element top and container top and adjust scrollTop
+                  const containerRect = readerEl.getBoundingClientRect();
+                  const elRect = el.getBoundingClientRect();
+                  // Align the sentence top to the reader top with a small padding
+                  const paddingTop = 8; // show the sentence from near the top
+                  const targetScrollTop =
+                    readerEl.scrollTop +
+                    Math.round(elRect.top - containerRect.top - paddingTop);
+                  readerEl.scrollTop = targetScrollTop;
+                  window.setTimeout(() => {
+                    _suppressAutoLoad = false;
+                  }, 120);
+                  await tick();
+                  initInfiniteObserver();
+                  restored = true;
+                }
+              }
+            }
           }
-          // compute delta between element top and container top and adjust scrollTop
-          const containerRect = readerEl.getBoundingClientRect();
-          const elRect = el.getBoundingClientRect();
-          // Offset so the page label is visible above the sentence
-          const offsetAbove = 48;
-          const targetScrollDelta =
-            elRect.top - containerRect.top - offsetAbove;
-          const targetScrollTop =
-            readerEl.scrollTop + Math.max(0, Math.round(targetScrollDelta));
-          // perform instant scroll, but suppress auto-load briefly
-          _suppressAutoLoad = true;
-          _lastScrollTriggerAt = Date.now();
-          readerEl.scrollTop = targetScrollTop;
-          window.setTimeout(() => {
-            _suppressAutoLoad = false;
-          }, 120);
-          // re-init observer after next tick so normal infinite loading resumes
-          await tick();
-          initInfiniteObserver();
+        } catch {
+          /* ignore localStorage */
+        }
+        if (!restored) {
+          // compute index of last page start and jump there as a fallback
+          const sortedBoundaries = Array.from(pageBoundaries).sort(
+            (a, b) => a - b,
+          );
+          const lastPageStartIdx =
+            sortedBoundaries.length > 0
+              ? sortedBoundaries[sortedBoundaries.length - 1]
+              : 0;
+          const displayIdx = Math.max(0, lastPageStartIdx - 1);
+          const el = elRefs[displayIdx];
+          if (readerEl && el) {
+            try {
+              if (observer) observer.disconnect();
+            } catch {
+              /* ignore */
+            }
+            const containerRect = readerEl.getBoundingClientRect();
+            const elRect = el.getBoundingClientRect();
+            const paddingTop = 8;
+            const targetScrollTop =
+              readerEl.scrollTop +
+              Math.round(elRect.top - containerRect.top - paddingTop);
+            _suppressAutoLoad = true;
+            _lastScrollTriggerAt = Date.now();
+            readerEl.scrollTop = targetScrollTop;
+            window.setTimeout(() => {
+              _suppressAutoLoad = false;
+            }, 120);
+            await tick();
+            initInfiniteObserver();
+          }
         }
       } else {
         // initial load: compute charCount from viewport size and request first chunk
@@ -714,6 +783,30 @@
       readerEl.addEventListener("scroll", updateScrollProgressDebounced, {
         passive: true,
       });
+      // persist top-visible sentence index (debounced)
+      const saveTopSentenceDebounced = () => {
+        if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
+        _scrollSaveTimer = window.setTimeout(() => {
+          try {
+            const idx = getTopVisibleSentenceIndex();
+            if (idx != null) {
+              const s = sentences[idx];
+              if (s && s.sentenceNo != null) {
+                localStorage.setItem(
+                  topSentenceStorageKey(bookId),
+                  String(s.sentenceNo),
+                );
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+          _scrollSaveTimer = null;
+        }, SCROLL_SAVE_DEBOUNCE) as unknown as number;
+      };
+      readerEl.addEventListener("scroll", saveTopSentenceDebounced, {
+        passive: true,
+      });
       // initial progress calc
       updateScrollProgressDebounced();
       // also update subtitle header on scroll
@@ -726,6 +819,11 @@
       });
     }
     initInfiniteObserver();
+  });
+
+  onDestroy(() => {
+    // ensure scroll-save timer cleared
+    if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
   });
 
   onDestroy(() => {
