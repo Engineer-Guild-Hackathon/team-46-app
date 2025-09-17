@@ -187,7 +187,7 @@
         pageCount = 1;
         // persist initial fetch as first page
         try {
-          writePages(bookId, [sentences as any]);
+          writePages(bookId, [[...sentences].map((s) => toStoredSentence(s))]);
         } catch {
           /* ignore */
         }
@@ -211,7 +211,12 @@
         });
         // persist updated pages after append
         try {
-          writePages(bookId, pagesFromSentences() as any);
+          writePages(
+            bookId,
+            pagesFromSentences().map((pg) =>
+              pg.map((s) => toStoredSentence(s)),
+            ),
+          );
         } catch {
           /* ignore */
         }
@@ -251,6 +256,23 @@
     // last page
     pages.push(sentences.slice(start));
     return pages;
+  }
+
+  // Helper: convert our in-memory Sentence to the persisted StoredSentence shape
+  // We intentionally read persisted fields if present (mergeWithSavedSentences
+  // will attach them), and default to sensible empties otherwise.
+  function toStoredSentence(s: Sentence) {
+    return {
+      type: s.type,
+      sentenceNo: s.sentenceNo ?? -1,
+      en: s.en,
+      jp: s.jp,
+      jp_word: s.jp_word,
+      clickedWordIndex: Array.isArray((s as any).clickedWordIndex)
+        ? (s as any).clickedWordIndex.slice()
+        : [],
+      sentenceClicked: !!(s as any).sentenceClicked,
+    };
   }
 
   // Test hook (Vitest): allow forcing a next load from tests
