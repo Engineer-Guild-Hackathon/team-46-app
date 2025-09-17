@@ -632,16 +632,19 @@
           // compute delta between element top and container top and adjust scrollTop
           const containerRect = readerEl.getBoundingClientRect();
           const elRect = el.getBoundingClientRect();
-          const delta = elRect.top - containerRect.top;
-          // apply delta to scrollTop to align the element with the top of the container
-          readerEl.scrollTop += Math.max(0, Math.round(delta));
-          // set a short cooldown to prevent immediate auto-loading
-          _lastScrollTriggerAt = Date.now();
-          // suppress auto-load for a short moment while we finalize programmatic scroll
+          // Offset so the page label is visible above the sentence
+          const offsetAbove = 48;
+          const targetScrollDelta =
+            elRect.top - containerRect.top - offsetAbove;
+          const targetScrollTop =
+            readerEl.scrollTop + Math.max(0, Math.round(targetScrollDelta));
+          // perform instant scroll, but suppress auto-load briefly
           _suppressAutoLoad = true;
+          _lastScrollTriggerAt = Date.now();
+          readerEl.scrollTop = targetScrollTop;
           window.setTimeout(() => {
             _suppressAutoLoad = false;
-          }, 350);
+          }, 120);
           // re-init observer after next tick so normal infinite loading resumes
           await tick();
           initInfiniteObserver();
@@ -813,7 +816,6 @@
     }
   }
   onDestroy(() => observer && observer.disconnect());
-
   // Update the currently visible subtitle (the latest subtitle whose element
   // is within or above the top of the reader viewport). This keeps a sticky
   // header aligned with the content beneath.
