@@ -14,6 +14,14 @@
     renderSentenceHTML,
     selectWordAtPointer as selectWordAtPointerHelper,
   } from "$lib/pages/bookPageUtils";
+  import {
+    mergeWithSavedSentences,
+    setSentenceClicked,
+    addClickedWordIndex,
+    removeClickedWordIndex,
+    readPages,
+    writePages,
+  } from "$lib/pages/bookProgress";
   import { ChevronLeft } from "@lucide/svelte";
   import Button from "$lib/components/ui/button/button.svelte";
   import {
@@ -134,8 +142,8 @@
         }
       }
 
-      // Map to local Sentence shape
-      const newSentences = res.text.map((t) => ({
+      // Map to local Sentence shape and merge any saved progress
+      const mapped = res.text.map((t) => ({
         type: t.type,
         en: t.en,
         jp: t.jp,
@@ -143,10 +151,20 @@
         level: String(t.sentenceNo),
         sentenceNo: t.sentenceNo,
       }));
+      const newSentences = mergeWithSavedSentences(
+        bookId,
+        mapped,
+      ) as Sentence[];
       if (start === 0) {
         sentences = newSentences;
         currentStart = start;
         pageCount = 1;
+        // persist initial fetch as first page
+        try {
+          writePages(bookId, [sentences as any]);
+        } catch {
+          /* ignore */
+        }
       } else {
         const beforeLen = sentences.length;
         // record soft page boundary at the index where new chunk begins
@@ -165,6 +183,12 @@
           startSentenceNoRequested: start,
           page: pageCount,
         });
+        // persist updated pages after append
+        try {
+          writePages(bookId, pagesFromSentences() as any);
+        } catch {
+          /* ignore */
+        }
       }
       // update pagination state (lastEnd always moves forward if we received anything)
       if (newSentences.length > 0) {
@@ -186,6 +210,21 @@
       if (isInitial) loading = false;
       lastLoadCompletedAt = Date.now();
     }
+  }
+
+  // Convert current sentences and pageBoundaries into pages for persistence.
+  function pagesFromSentences(): Sentence[][] {
+    if (!sentences || sentences.length === 0) return [];
+    const boundaries = Array.from(pageBoundaries).sort((a, b) => a - b);
+    const pages: Sentence[][] = [];
+    let start = 0;
+    for (const b of boundaries) {
+      pages.push(sentences.slice(start, b));
+      start = b;
+    }
+    // last page
+    pages.push(sentences.slice(start));
+    return pages;
   }
 
   // Test hook (Vitest): allow forcing a next load from tests
@@ -224,6 +263,12 @@
         userRate ?? 0,
         s?.sentenceNo ?? i,
       ).catch(() => {});
+      // persist that this sentence was clicked/opened
+      try {
+        setSentenceClicked(bookId, s?.sentenceNo ?? i, s?.en ?? "");
+      } catch {
+        /* ignore storage errors */
+      }
     }
     showBubble(i);
   }
@@ -246,6 +291,13 @@
       if (set.size === 0) delete wordHighlights[i];
       reassignWordHighlights();
       hideWordTooltip(i);
+      // remove persisted clicked word index
+      try {
+        const s = sentences[i];
+        removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+      } catch {
+        /* ignore */
+      }
       return;
     }
     set.add(idx);
@@ -269,6 +321,17 @@
         userRate ?? 0,
         wordValue,
       );
+      // persist clicked word index for resume
+      try {
+        addClickedWordIndex(
+          bookId,
+          sentence?.sentenceNo ?? i,
+          sentence?.en ?? "",
+          idx,
+        );
+      } catch {
+        /* ignore */
+      }
     } catch {
       /* ignore word log */
     }
@@ -505,13 +568,102 @@
     } catch {
       /* ignore localStorage */
     }
-    // initial load: compute charCount from viewport size and request first chunk
+    // If we have stored pages for this book, use them and skip the API initial call.
     try {
-      const charCount = getCharCountForViewport();
-      await loadPage(0, charCount);
-    } catch (_e) {
-      // fallback to calling without charCount
-      await loadPage(0);
+      const storedPages = readPages(bookId);
+      if (storedPages && storedPages.length > 0) {
+        // flatten to sentences
+        sentences = ([] as Sentence[]).concat(...(storedPages as any));
+        // restore selected sentences and word highlights from stored state
+        selected = new Set<number>();
+        bubbleVisible = new Set<number>();
+        const wh: Record<number, Set<number>> = {};
+        for (let i = 0; i < sentences.length; i++) {
+          const s = sentences[i] as any;
+          if (s.sentenceClicked) {
+            selected.add(i);
+            bubbleVisible.add(i);
+          }
+          if (
+            Array.isArray(s.clickedWordIndex) &&
+            s.clickedWordIndex.length > 0
+          ) {
+            wh[i] = new Set(s.clickedWordIndex as number[]);
+          }
+        }
+        wordHighlights = wh;
+        // recompute pageBoundaries and pageCount
+        pageBoundaries = new Set<number>();
+        let idx = 0;
+        pageCount = storedPages.length;
+        for (let p = 0; p < storedPages.length; p++) {
+          if (p === 0) {
+            // first page starts at 0
+          } else {
+            pageBoundaries.add(idx);
+            pageNumberForBoundary[idx] = p + 1;
+          }
+          idx += storedPages[p].length;
+        }
+        lastEnd =
+          sentences.length > 0
+            ? (sentences[sentences.length - 1].sentenceNo ?? 0)
+            : 0;
+        currentStart = 0;
+        loading = false;
+        // after DOM updates, scroll to top of last page so user resumes there
+        await tick();
+        // compute index of last page start
+        const sortedBoundaries = Array.from(pageBoundaries).sort(
+          (a, b) => a - b,
+        );
+        const lastPageStartIdx =
+          sortedBoundaries.length > 0
+            ? sortedBoundaries[sortedBoundaries.length - 1]
+            : 0;
+        const el = elRefs[lastPageStartIdx];
+        if (readerEl && el) {
+          // Temporarily disconnect observer to avoid triggering loads while we programmatically scroll
+          try {
+            if (observer) observer.disconnect();
+          } catch {
+            /* ignore */
+          }
+          // compute delta between element top and container top and adjust scrollTop
+          const containerRect = readerEl.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const delta = elRect.top - containerRect.top;
+          // apply delta to scrollTop to align the element with the top of the container
+          readerEl.scrollTop += Math.max(0, Math.round(delta));
+          // set a short cooldown to prevent immediate auto-loading
+          _lastScrollTriggerAt = Date.now();
+          // suppress auto-load for a short moment while we finalize programmatic scroll
+          _suppressAutoLoad = true;
+          window.setTimeout(() => {
+            _suppressAutoLoad = false;
+          }, 350);
+          // re-init observer after next tick so normal infinite loading resumes
+          await tick();
+          initInfiniteObserver();
+        }
+      } else {
+        // initial load: compute charCount from viewport size and request first chunk
+        try {
+          const charCount = getCharCountForViewport();
+          await loadPage(0, charCount);
+        } catch (_e) {
+          // fallback to calling without charCount
+          await loadPage(0);
+        }
+      }
+    } catch (err) {
+      // fallback to normal loading if storage read fails
+      try {
+        const charCount = getCharCountForViewport();
+        await loadPage(0, charCount);
+      } catch {
+        await loadPage(0);
+      }
     }
 
     // wait for DOM to update so sentinel binds inside readerEl
@@ -567,8 +719,10 @@
   const EXTRA_TRIGGER_PX = 12;
   const SCROLL_TRIGGER_COOLDOWN_MS = 2500;
   let _lastScrollTriggerAt = 0;
+  let _suppressAutoLoad = false;
 
   function checkAndLoadNearBottom() {
+    if (_suppressAutoLoad) return;
     if (!readerEl) return;
     try {
       const el = readerEl;
@@ -652,7 +806,10 @@
     // observe all existing boundaryEls
     for (const _k in boundaryEls) {
       const el = boundaryEls[_k];
-      if (el) observer.observe(el);
+      // Only observe boundaries that have a mapped start sentence (from API runs).
+      // If we loaded pages from storage, pageBoundaryMap may not have an entry
+      // for these boundaries — do not observe them to avoid accidental API calls.
+      if (el && pageBoundaryMap[_k] != null) observer.observe(el);
     }
   }
   onDestroy(() => observer && observer.disconnect());
