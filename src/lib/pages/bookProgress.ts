@@ -12,6 +12,7 @@ type StoredSentence = {
   en: string;
   jp?: string;
   jp_word?: string[];
+  en_word?: string[];
   // persisted UI state
   clickedWordIndex: number[];
   sentenceClicked: boolean;
@@ -92,6 +93,7 @@ export function mergeWithSavedSentences(
     en: string;
     jp?: string;
     jp_word?: string[];
+    en_word?: string[];
   }>,
 ) {
   // Read existing saved sentences (prefer page-based storage).
@@ -116,6 +118,7 @@ export function mergeWithSavedSentences(
       en: s.en,
       jp: s.jp,
       jp_word: s.jp_word,
+      en_word: s.en_word,
       clickedWordIndex: found?.clickedWordIndex
         ? [...found.clickedWordIndex]
         : [],

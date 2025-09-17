@@ -11,6 +11,7 @@
     en: string;
     jp?: string;
     jp_word?: string[];
+    en_word?: string[];
     level?: string;
     sentenceNo?: number;
   };
@@ -89,7 +90,7 @@
     return lastMatch;
   }
 
-  // Word highlight / tooltip state
+  // Phrase highlight / tooltip state
   const WORD_TOOLTIP_MS = 5000;
   let wordHighlights: Record<number, Set<number>> = {};
   let wordTooltipWordIndex: Record<number, number> = {};
@@ -139,6 +140,13 @@
       };
 
       // Build and log API params
+      // Telemetry counters: null on first page load, then zero if no interactions.
+      // Determine if this is the very first load by checking firstLoad flag and start===0.
+      const hasInteractions =
+        Object.keys(wordHighlights).length > 0 || selected.size > 0;
+      const wordClickCountParam = firstLoad && start === 0 ? null : 0;
+      const sentenceClickCountParam = firstLoad && start === 0 ? null : 0;
+
       const apiParams = {
         bookId,
         startSentenceNo: start,
@@ -149,6 +157,8 @@
         charCount: charCountParam,
         time: timeSec,
         difficultBtn: difficultBtnPending ? true : undefined,
+        wordClickCount: wordClickCountParam,
+        sentenceClickCount: sentenceClickCountParam,
       };
       console.debug("[BookPage] getTextPage params ->", apiParams);
 
@@ -173,6 +183,7 @@
         en: t.en,
         jp: t.jp,
         jp_word: t.jp_word,
+        en_word: (t as any).en_word ?? (t as any).en_phrase,
         level: String(t.sentenceNo),
         sentenceNo: t.sentenceNo,
       }));
@@ -264,6 +275,7 @@
       en: s.en,
       jp: s.jp,
       jp_word: s.jp_word,
+      en_word: (s as any).en_word,
       clickedWordIndex: Array.isArray((s as any).clickedWordIndex)
         ? (s as any).clickedWordIndex.slice()
         : [],
@@ -336,7 +348,7 @@
   }
 
   // Interaction handlers
-  // Left click: toggle/select a word
+  // Left click: toggle/select a phrase
   function handleClick(i: number, e: MouseEvent) {
     if (e.button !== 0) return;
     // If a long-press just triggered sentence translation, suppress immediate word selection
@@ -370,12 +382,19 @@
     try {
       const sentence = sentences[i];
       const rawText = sentence?.en ?? "";
-      // match words including internal apostrophes (ASCII and Unicode) and hyphens
-      const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
-      const words: string[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(rawText)) !== null) words.push(m[0]);
-      const wordValue = words[idx] ?? String(idx);
+      // Prefer phrase text if provided; otherwise compute word by regex
+      let wordValue: string | undefined;
+      const phrases = (sentence as any)?.en_word as string[] | undefined;
+      if (phrases && phrases[idx] != null) {
+        wordValue = String(phrases[idx]);
+      } else {
+        const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+        const words: string[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(rawText)) !== null) words.push(m[0]);
+        wordValue = words[idx];
+      }
+      if (!wordValue) wordValue = String(idx);
       void logOpenWord(
         (typeof localStorage !== "undefined" &&
           localStorage.getItem("userId")) ||

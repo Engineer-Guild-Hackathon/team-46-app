@@ -53,19 +53,19 @@ describe("BookPage", () => {
     }
   });
 
-  it("shows word-level tooltip with translation or fallback", async () => {
+  it("shows phrase-level tooltip with translation or fallback", async () => {
     const { container } = render(BookPage, { bookId: "test" });
     // Wait a tick to allow initial render
     await Promise.resolve();
     const firstWord = container.querySelector(
-      ".sentenceInline span.word",
+      ".sentenceInline span.phrase",
     ) as HTMLElement | null;
     if (firstWord) {
       // Simulate clicking the word span directly
       await fireEvent.click(firstWord);
       // Tooltip should appear either with JP translation (if fixture provides) or fallback text
       const tooltip = firstWord.querySelector(
-        ".word-tooltip",
+        ".phrase-tooltip",
       ) as HTMLElement | null;
       expect(tooltip).toBeTruthy();
       expect(
