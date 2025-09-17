@@ -34,6 +34,7 @@
     logDifficultBtn,
     logOpenWord,
   } from "$lib/api/logging";
+  import SentenceInline from "$lib/pages/components/SentenceInline.svelte";
 
   export let bookId: string;
 
@@ -979,52 +980,46 @@
               <div class="mb-4 last:mb-0">
                 {#each b.items as s, j}
                   {#key `${b.idxStart + j}`}
-                    <span
-                      role="button"
-                      tabindex="0"
-                      class="sentenceInline inline relative cursor-pointer rounded px-[0.04em] {selected.has(
-                        b.idxStart + j,
-                      )
-                        ? 'selected bg-amber-200'
-                        : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-300"
-                      bind:this={elRefs[b.idxStart + j]}
-                      on:click={(e) => handleClick(b.idxStart + j, e)}
-                      on:mousedown={(e) => handleMouseDown(b.idxStart + j, e)}
-                      on:contextmenu={(e) =>
-                        handleContextMenu(b.idxStart + j, e)}
-                      on:pointerdown={(e) =>
-                        touchPointerDown(b.idxStart + j, e)}
-                      on:pointermove={(e) =>
-                        touchPointerMove(b.idxStart + j, e)}
-                      on:touchmove|passive={() => cancelAllTouchPresses()}
-                      on:pointerup={(e) => touchPointerUp(b.idxStart + j, e)}
-                      on:keydown={(e) => {
+                    <SentenceInline
+                      idx={b.idxStart + j}
+                      {s}
+                      selected={selected.has(b.idxStart + j)}
+                      bubbleVisible={bubbleVisible.has(b.idxStart + j)}
+                      wordHighlights={wordHighlights[b.idxStart + j]}
+                      wordTooltipVisible={wordTooltipVisible[b.idxStart + j]}
+                      wordTooltipWordIndex={wordTooltipWordIndex[
+                        b.idxStart + j
+                      ]}
+                      on:sentenceClick={(ev) =>
+                        handleClick(ev.detail.idx, ev.detail.event)}
+                      on:sentenceContextmenu={(ev) =>
+                        handleContextMenu(ev.detail.idx, ev.detail.event)}
+                      on:sentenceMouseDown={(ev) =>
+                        handleMouseDown(ev.detail.idx, ev.detail.event)}
+                      on:sentencePointerDown={(ev) =>
+                        touchPointerDown(ev.detail.idx, ev.detail.event)}
+                      on:sentencePointerMove={(ev) =>
+                        touchPointerMove(ev.detail.idx, ev.detail.event)}
+                      on:sentencePointerUp={(ev) =>
+                        touchPointerUp(ev.detail.idx, ev.detail.event)}
+                      on:sentenceKeydown={(ev) => {
+                        const e = ev.detail.event as KeyboardEvent;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          toggleSentence(b.idxStart + j);
+                          toggleSentence(ev.detail.idx);
                         }
                         if (e.key === "Escape") {
                           e.preventDefault();
-                          hideBubble(b.idxStart + j);
+                          hideBubble(ev.detail.idx);
                         }
                       }}
-                      aria-pressed={selected.has(b.idxStart + j)}
-                    >
-                      {@html renderSentenceHTML(
-                        b.idxStart + j,
-                        s,
-                        wordHighlights[b.idxStart + j],
-                        wordTooltipVisible[b.idxStart + j],
-                        wordTooltipWordIndex[b.idxStart + j],
-                      )}
-                    </span>
-                    {#if bubbleVisible.has(b.idxStart + j)}
-                      <span
-                        class="jp-translation block text-[0.9rem] text-[#0a56ad] mt-1 ml-1 leading-[1.2]"
-                        aria-label="Japanese translation">{s.jp}</span
-                      >
-                    {/if}
-                    <span class="sr-only">.</span>
+                      on:mounted={(ev) => {
+                        elRefs[ev.detail.idx] = ev.detail.el;
+                      }}
+                      on:destroyed={(ev) => {
+                        delete elRefs[ev.detail.idx];
+                      }}
+                    />
                   {/key}
                   {#if pageBoundaries.has(b.idxStart + j + 1)}
                     <div
