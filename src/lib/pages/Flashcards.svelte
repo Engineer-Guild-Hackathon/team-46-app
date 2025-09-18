@@ -25,28 +25,37 @@
     type ScheduledCard,
   } from "./flashcardScheduler";
   import { loadCards } from "./flashcardsStore";
+  import { removeCard } from "./flashcardsStore";
   import * as Table from "$lib/components/ui/table/index.js";
   import { onMount, onDestroy } from "svelte";
   import Chart from "chart.js/auto";
+  import { Trash2 } from "@lucide/svelte";
 
   let collapsibleOpen = $state(false);
 
   // Load cards from localStorage
   const initialCards: FCItem[] = loadCards();
-  let deck: DeckState = buildDeck(initialCards, loadState());
+  let deck = $state<DeckState>(buildDeck(initialCards, loadState()));
   let queue = $state<ScheduledCard[]>([]);
   let current = $state<ScheduledCard | undefined>(undefined);
   let showBack = $state(false);
-  let s = $state(deckStats(deck));
-  let cats = $state(categorize(deck));
+  let s = $derived(deckStats(deck));
+  let cats = $derived(categorize(deck));
   let pieEl: HTMLCanvasElement | null = null;
   let pie: Chart | null = null;
 
   function refresh() {
     queue = dueQueue(deck);
     current = queue[0];
-    s = deckStats(deck);
-    cats = categorize(deck);
+  }
+
+  function deleteCard(id: string) {
+    if (removeCard(id)) {
+      // Reload cards and rebuild deck
+      const updatedCards = loadCards();
+      deck = buildDeck(updatedCards, loadState());
+      refresh();
+    }
   }
 
   function flip() {
@@ -261,12 +270,13 @@
               <Table.Row>
                 <Table.Head>Word</Table.Head>
                 <Table.Head>Definition</Table.Head>
+                <Table.Head class="w-4">Delete</Table.Head>
               </Table.Row>
             </Table.Header>
             <Table.Body>
               {#if deck.cards.length === 0}
                 <Table.Row>
-                  <Table.Cell colspan="2" class="text-muted-foreground">
+                  <Table.Cell colspan="3" class="text-muted-foreground">
                     No cards saved yet.
                   </Table.Cell>
                 </Table.Row>
@@ -274,7 +284,22 @@
                 {#each deck.cards as c}
                   <Table.Row>
                     <Table.Cell class="font-medium">{c.front}</Table.Cell>
-                    <Table.Cell>{c.back || "—"}</Table.Cell>
+                    <Table.Cell class="max-w-xs">
+                      <span class="block truncate" title={c.back || "—"}>
+                        {c.back || "—"}
+                      </span>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onclick={() => deleteCard(c.id)}
+                        aria-label={`Delete ${c.front}`}
+                        class="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 class="h-4 w-4" />
+                      </Button>
+                    </Table.Cell>
                   </Table.Row>
                 {/each}
               {/if}
