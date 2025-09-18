@@ -27,7 +27,7 @@ export function renderSentenceHTML(
   tooltipWordIdx?: number,
 ): string {
   const raw = formatSentence(s.en);
-  
+
   // Split into italic segments using underscore delimiters: _..._
   // Underscores are removed from output; text between is italic.
   const segments: Array<{ text: string; italic: boolean }> = [];
@@ -56,9 +56,9 @@ export function renderSentenceHTML(
   if (enPhrases) {
     // For phrase segmentation, we need to reconstruct the text without underscores
     // but track which parts should be italic
-    const reconstructedText = segments.map(seg => seg.text).join("");
+    const reconstructedText = segments.map((seg) => seg.text).join("");
     const wordRe = /[A-Za-z0-9]+(?:[''-][A-Za-z0-9]+)*/g;
-    
+
     // Create a mapping from character positions in reconstructedText to italic status
     const italicMap = new Map<number, boolean>();
     let pos = 0;
@@ -68,7 +68,7 @@ export function renderSentenceHTML(
       }
       pos += seg.text.length;
     }
-    
+
     // Collect base word matches with positions in reconstructed text
     const wordMatches: Array<{ start: number; end: number; text: string }> = [];
     let m: RegExpExecArray | null;
@@ -108,14 +108,18 @@ export function renderSentenceHTML(
           // Check if this between-text should be italic
           const isItalicBetween = italicMap.get(prevEnd) || false;
           const escapedBetween = esc(betweenText);
-          out.push(isItalicBetween ? `<span class="italic">${escapedBetween}</span>` : escapedBetween);
+          out.push(
+            isItalicBetween
+              ? `<span class="italic">${escapedBetween}</span>`
+              : escapedBetween,
+          );
         }
         const visible = reconstructedText.slice(start, end);
         const isHighlighted = !!highlightSet && highlightSet.has(pi);
         const baseCls = "word inline relative cursor-pointer whitespace-normal";
         const highlightCls =
           "text-[#0a56ad] underline decoration-[#0a56ad] decoration-2 underline-offset-2";
-        
+
         // Check if this phrase should be italic (check if any character in the phrase is italic)
         let isItalicPhrase = false;
         for (let pos = start; pos < end; pos++) {
@@ -124,10 +128,10 @@ export function renderSentenceHTML(
             break;
           }
         }
-        
+
         const cls = isHighlighted ? `${baseCls} ${highlightCls}` : baseCls;
         const finalCls = isItalicPhrase ? `${cls} italic` : cls;
-        
+
         if (isHighlighted && tooltipVisible && pi === tooltipWordIdx) {
           const jp = s.jp_word?.[pi];
           const tip =
@@ -152,19 +156,25 @@ export function renderSentenceHTML(
           const betweenText = reconstructedText.slice(prevEnd, w.start);
           const isItalicBetween = italicMap.get(prevEnd) || false;
           const escapedBetween = esc(betweenText);
-          out.push(isItalicBetween ? `<span class="italic">${escapedBetween}</span>` : escapedBetween);
+          out.push(
+            isItalicBetween
+              ? `<span class="italic">${escapedBetween}</span>`
+              : escapedBetween,
+          );
         }
         const isHighlighted = !!highlightSet && highlightSet.has(pi);
         const baseCls = "word inline relative cursor-pointer whitespace-normal";
         const highlightCls =
           "text-[#0a56ad] underline decoration-[#0a56ad] decoration-2 underline-offset-2";
-        
+
         // Check if this word should be italic
         const isItalicWord = italicMap.get(w.start) || false;
         const cls = isHighlighted ? `${baseCls} ${highlightCls}` : baseCls;
         const finalCls = isItalicWord ? `${cls} italic` : cls;
-        
-        out.push(`<span class="${finalCls}" data-wi="${pi}">${esc(w.text)}</span>`);
+
+        out.push(
+          `<span class="${finalCls}" data-wi="${pi}">${esc(w.text)}</span>`,
+        );
         prevEnd = w.end;
         wi += 1;
         pi += 1; // advance phrase as well to keep indices roughly aligned
@@ -177,7 +187,11 @@ export function renderSentenceHTML(
         const tailText = reconstructedText.slice(prevEnd, lastEnd);
         const isItalicTail = italicMap.get(prevEnd) || false;
         const escapedTail = esc(tailText);
-        out.push(isItalicTail ? `<span class="italic">${escapedTail}</span>` : escapedTail);
+        out.push(
+          isItalicTail
+            ? `<span class="italic">${escapedTail}</span>`
+            : escapedTail,
+        );
       }
       prevEnd = lastEnd;
     }
@@ -185,7 +199,11 @@ export function renderSentenceHTML(
       const finalText = reconstructedText.slice(prevEnd);
       const isItalicFinal = italicMap.get(prevEnd) || false;
       const escapedFinal = esc(finalText);
-      out.push(isItalicFinal ? `<span class="italic">${escapedFinal}</span>` : escapedFinal);
+      out.push(
+        isItalicFinal
+          ? `<span class="italic">${escapedFinal}</span>`
+          : escapedFinal,
+      );
     }
     return out.join("");
   }

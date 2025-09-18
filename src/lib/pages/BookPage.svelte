@@ -774,7 +774,7 @@
     // Re-load current page with same start & charCount. The pending flag
     // will cause the request to include `difficultBtn=true` so backend can
     // return an updated `rate` value which we persist locally when received.
-    await loadPage(currentStart, getCharCountForViewport());
+    await loadPage(currentStart, getCharCountForViewport(), true);
   }
 
   // Position word tooltip to avoid clipping

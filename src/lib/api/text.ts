@@ -25,9 +25,6 @@ export interface GetTextPageParams {
   charCount?: number;
   difficultBtn?: boolean;
   time?: number | null;
-  wordClickCount?: number;
-  sentenceClickCount?: number;
-  rate?: number;
 }
 
 export interface GetTextPageResponse {
@@ -47,9 +44,6 @@ export async function getTextPage(
     charCount = 800,
     difficultBtn,
     time,
-    wordClickCount,
-    sentenceClickCount,
-    rate,
   } = params;
 
   // The backend expects these as query params. We forward them as-is.
@@ -60,8 +54,5 @@ export async function getTextPage(
     charCount,
     difficultBtn,
     time,
-    wordClickCount,
-    sentenceClickCount,
-    rate,
   });
 }
