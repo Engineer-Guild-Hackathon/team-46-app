@@ -28,10 +28,36 @@ export function saveCards(cards: FlashcardItem[]) {
 
 export function addCardIfMissing(item: FlashcardItem): boolean {
   const cards = loadCards();
-  if (cards.some((c) => c.id === item.id)) return false;
-  const next = [...cards, { ...item, back: item.back ?? "" }];
+  const idx = cards.findIndex((c) => c.id === item.id);
+  if (idx === -1) {
+    const next = [...cards, { ...item, back: item.back ?? "" }];
+    saveCards(next);
+    return true; // added new card
+  }
+  // Card exists: append definition if new and non-empty
+  const existing = cards[idx];
+  const incoming = (item.back ?? "").trim();
+  if (!incoming) return false; // nothing to append
+  const currentBack = (existing.back ?? "").trim();
+  if (currentBack.length === 0) {
+    const updated = { ...existing, back: incoming };
+    const next = cards.slice();
+    next[idx] = updated;
+    saveCards(next);
+    return true; // updated
+  }
+  // Avoid duplicates: split by our delimiter and compare trimmed tokens
+  const delim = " / ";
+  const parts = currentBack
+    .split(delim)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.includes(incoming)) return false; // already present
+  const updated = { ...existing, back: currentBack + delim + incoming };
+  const next = cards.slice();
+  next[idx] = updated;
   saveCards(next);
-  return true;
+  return true; // appended
 }
 
 export function removeCard(id: string): boolean {
