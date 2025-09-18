@@ -129,7 +129,8 @@
   let selectedView: "browse" | "stats" | "flashcards" = "browse";
   function updateFromHash() {
     if (location.hash.startsWith("#/stats")) selectedView = "stats";
-    else if (location.hash.startsWith("#/flashcards")) selectedView = "flashcards";
+    else if (location.hash.startsWith("#/flashcards"))
+      selectedView = "flashcards";
     else selectedView = "browse";
   }
   onMount(() => {
@@ -140,15 +141,15 @@
 </script>
 
 <header
-  class="sticky top-0 z-20 bg-white/60 backdrop-blur-md border-b border-gray-200"
+  class="sticky top-0 z-20 bg-transparent backdrop-blur-lg border-b border-gray-200"
 >
   <div
     class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between"
   >
     <div class="flex items-center gap-3">
       <div>
-        <h1 class="text-lg font-semibold leading-5">FlexRead</h1>
-        <p class="text-xs text-gray-500">
+        <h1 class="text-lg font-semibold leading-5 mb-1">FlexRead</h1>
+        <p class="text-xs text-secondary-foreground">
           自動で「ちょうどいい難易度」になる英語本リーダー
         </p>
       </div>
@@ -156,7 +157,7 @@
   </div>
 </header>
 
-<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<main class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
   {#if selectedView === "browse"}
     <Browse />
   {:else if selectedView === "stats"}
@@ -171,10 +172,10 @@
 </main>
 
 <!-- Footer navigation: Browse / Stats / Flashcards -->
-<footer class="fixed bottom-4 left-0 right-0 pointer-events-none">
+<footer class="fixed bottom-4 left-0 right-0 pointer-events-none z-20">
   <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     <div
-      class="bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full mx-auto w-max px-3 py-2 flex items-center gap-2 shadow-sm pointer-events-auto"
+      class="bg-white backdrop-blur-sm border border-gray-200 rounded-full mx-auto w-max px-3 py-2 flex items-center gap-2 shadow-sm pointer-events-auto"
     >
       <Button
         size="sm"

@@ -2,44 +2,60 @@
   import BookCard from "../components/BookCard.svelte";
   import * as Select from "$lib/components/ui/select";
   import { Input } from "$lib/components/ui/input";
-  import { createPaginatedBooksStore } from "$lib/api/books";
-  import { onDestroy } from "svelte";
+  import { Search } from "@lucide/svelte";
   import type { Book } from "../types";
+  import { fetchBooks } from "$lib/api/books";
 
-  let search = "";
-  let sort: "recommended" | "popularity" | "year" = "recommended";
+  let search = $state("");
+
+  const sortOptions = [
+    { value: "recommended", label: "Recommended" },
+    { value: "popularity", label: "Popular" },
+    { value: "year", label: "Year Released" },
+  ];
+
+  let sortValue = $state("recommended");
+  // Last submitted search term (used for fetching)
+  let query = $state("");
+  // Guard to avoid redundant refreshes (non-reactive)
+  let lastKey = "";
 
   const pageSize = 12;
-  let store = createPaginatedBooksStore({ size: pageSize });
-  let books: Book[] = [];
-  let hasMore = true;
-  let loading = true;
-  let error: string | null = null;
+  let books: Book[] = $state([]);
+  let hasMore = $state(false);
+  let loading = $state(false);
+  let error: string | null = $state(null);
   const skeletonCount = pageSize;
   const skeletonIndices = Array.from({ length: skeletonCount }, (_, i) => i);
-  let unsubscribe = store.subscribe((p) => {
-    books = p.items.map((b) => ({
-      id: b.id,
-      title: b.title,
-      author: b.author,
-      coverUrl: b.thumbnail,
-    }));
-    hasMore = p.hasMore;
-    if (loading && (books.length > 0 || !hasMore)) loading = false;
-  });
-  onDestroy(() => unsubscribe());
 
-  let searchTimer: number | undefined;
-  $: if (search !== undefined) {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => refreshData(), 350) as unknown as number;
+  // Fetch a page of books (initial and on searches)
+  async function refreshData() {
+    loading = true;
+    error = null;
+    try {
+      const page = await fetchBooks({
+        search: query || undefined,
+        start: 0,
+        size: pageSize,
+        sort: backendSort(sortValue),
+      });
+      books = page.items.map((it) => ({
+        id: it.id,
+        title: it.title,
+        author: it.author,
+        coverUrl: it.thumbnail,
+      }));
+      hasMore = page.hasMore;
+    } catch (e: any) {
+      error = e?.message || "Failed to load books";
+    } finally {
+      loading = false;
+    }
   }
 
-  let prevSort: "recommended" | "popularity" | "year" = sort;
-  $: if (sort !== prevSort) {
-    prevSort = sort;
-    refreshData();
-  }
+  const triggerContent = $derived(
+    sortOptions.find((s) => s.value === sortValue)?.label || "Sort by...",
+  );
 
   function backendSort(value: string): string | undefined {
     switch (value) {
@@ -53,34 +69,10 @@
     }
   }
 
-  async function refreshData() {
-    loading = true;
-    error = null;
-    try {
-      store = createPaginatedBooksStore({
-        size: pageSize,
-        search: search.trim(),
-        sort: backendSort(sort),
-      });
-      unsubscribe();
-      unsubscribe = store.subscribe((p) => {
-        books = p.items.map((b) => ({
-          id: b.id,
-          title: b.title,
-          author: b.author,
-          coverUrl: b.thumbnail,
-        }));
-        hasMore = p.hasMore;
-        if (loading && (books.length > 0 || !hasMore)) loading = false;
-      });
-    } catch (e: any) {
-      error = e.message || "Failed to load books";
-      loading = false;
-    }
-  }
-
   function submitSearch(e?: Event) {
     e?.preventDefault?.();
+    query = search.trim();
+    // Trigger fetch explicitly on submit/icon click
     refreshData();
   }
 
@@ -88,55 +80,56 @@
     location.hash = `#/book/${book.id}`;
   }
 
-  async function loadMore() {
-    if (loading || !hasMore) return;
-    loading = true;
-    await store.loadMore();
-  }
-
-  let sentinel: HTMLDivElement | null = null;
-  const observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting) loadMore();
-      });
-    },
-    { rootMargin: "200px 0px 0px 0px", threshold: 0 },
-  );
-  $: if (sentinel) observer.observe(sentinel);
-  onDestroy(() => observer.disconnect());
+  // Initial load (once)
+  $effect.pre(() => {
+    refreshData();
+  });
 </script>
 
 <div class="mb-6">
   <form
-    class="flex flex-row gap-3 items-center"
+    class="flex flex-col gap-3"
     role="search"
-    on:submit|preventDefault={submitSearch}
+    onsubmit={(e) => {
+      e.preventDefault();
+      submitSearch(e);
+    }}
   >
-    <Input
-      class="flex-grow min-w-0 w-full sm:w-[320px]"
-      type="search"
-      placeholder="Search books..."
-      bind:value={search}
-      disabled={loading}
-    />
-    <div class="flex items-center gap-2">
-      <Select.Root type="single" bind:value={sort}>
-        <Select.Trigger
-          class="px-3 py-1 rounded-md bg-white border border-gray-200 shadow-sm"
-          >{sort
-            ? sort === "year"
-              ? "Year Released"
-              : sort.charAt(0).toUpperCase() + sort.slice(1)
-            : "Sort by..."}</Select.Trigger
-        >
-        <Select.Content>
-          <Select.Item value="recommended">Recommended</Select.Item>
-          <Select.Item value="popularity">Popularity</Select.Item>
-          <Select.Item value="year">Year Released</Select.Item>
-        </Select.Content>
-      </Select.Root>
+    <div
+      class="flex flex-grow rounded-2xl bg-accent-foreground h-12 items-center shadow-sm px-3 py-2 w-full max-w-md"
+    >
+      <button
+        type="submit"
+        class="m-2 p-0 border-0 bg-transparent cursor-pointer text-secondary-foreground inline-flex items-center justify-center"
+        aria-label="Search"
+        title="Search"
+        disabled={loading}
+      >
+        <Search class="w-5 h-5" />
+      </button>
+      <Input
+        class="flex-grow min-w-0 w-full sm:w-[320px] border-0 bg-transparent focus:ring-0 focus:ring-offset-0 focus:outline-none h-12"
+        type="search"
+        placeholder="Search books..."
+        bind:value={search}
+        disabled={loading}
+      />
     </div>
+    <Select.Root type="single" bind:value={sortValue}>
+      <Select.Trigger class="px-3 py-1 rounded-2xl h-12 bg-accent-foreground ">
+        {triggerContent}
+      </Select.Trigger>
+      <Select.Content>
+        <Select.Group>
+          <Select.Label>Sort by...</Select.Label>
+          {#each sortOptions as option (option.value)}
+            <Select.Item value={option.value} label={option.label}>
+              {option.label}
+            </Select.Item>
+          {/each}
+        </Select.Group>
+      </Select.Content>
+    </Select.Root>
   </form>
 </div>
 
@@ -164,7 +157,7 @@
   {:else}
     {#each books as b (b.id)}
       <div
-        class="rounded-lg bg-white shadow-sm hover:shadow-md transition"
+        class="rounded-lg shadow-sm hover:shadow-md transition"
         role="article"
       >
         <BookCard book={b} onOpen={openBook} />
@@ -181,9 +174,4 @@
     {/if}
   {/if}
 </section>
-
-<div
-  bind:this={sentinel}
-  class="infinite-sentinel h-1"
-  aria-hidden="true"
-></div>
+<!-- No infinite scroll. Initial + explicit search only. -->

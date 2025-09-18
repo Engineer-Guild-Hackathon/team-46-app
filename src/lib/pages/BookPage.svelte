@@ -1126,7 +1126,7 @@
     {:else}
       <section class="book-text mt-2">
         <article
-          class="reader font-serif text-[1.25rem] leading-[1.7] text-[#1b1b1b] bg-white border border-slate-200 rounded-xl px-5 pt-5 pb-6 shadow-sm max-h-[75vh] overflow-scroll break-words"
+          class="reader font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-white/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm max-h-[75vh] overflow-scroll break-words"
           aria-live="polite"
           bind:this={readerEl}
         >

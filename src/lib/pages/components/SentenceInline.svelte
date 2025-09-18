@@ -46,7 +46,7 @@
   role="button"
   tabindex="0"
   class="sentenceInline inline relative cursor-pointer rounded px-[0.04em] {selected
-    ? 'selected bg-amber-200'
+    ? 'selected'
     : ''} focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-300"
   bind:this={elRef}
   on:click={onClick}
@@ -69,7 +69,15 @@
 
 {#if bubbleVisible}
   <span
-    class="jp-translation block text-[0.9rem] text-[#0a56ad] mt-1 ml-1 leading-[1.2]"
+    class="jp-translation block text-[0.9rem] text-[#2C1810]/75 mt-1 ml-1 leading-[1.2]"
     aria-label="Japanese translation">{s.jp}</span
   >
 {/if}
+
+<style>
+  .sentenceInline.selected {
+    background: color-mix(in oklab, #daaa63 35%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, #daaa63 45%, transparent);
+    border-radius: 0.25rem;
+  }
+</style>
