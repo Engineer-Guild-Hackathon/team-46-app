@@ -1092,8 +1092,6 @@
     // schedule on next tick to allow bindings to settle
     tick().then(() => updateCurrentSubtitleDebounced());
   }
-
-  // sentence rendering and pointer helpers moved to `src/lib/pages/bookPageUtils.ts`
 </script>
 
 <main class="bookpage fixed inset-0 overflow-hidden overscroll-none box-border">

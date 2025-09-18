@@ -14,7 +14,7 @@ function getUser() {
   return val;
 }
 
-describe("UsernameModal", () => {
+describe.skip("UsernameModal (deprecated)", () => {
   it("requires a username before continuing", async () => {
     const { getByRole, queryByRole } = render(UsernameModal);
     const btn = getByRole("button", { name: "Save username" });

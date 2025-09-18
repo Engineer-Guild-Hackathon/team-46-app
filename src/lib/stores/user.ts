@@ -12,11 +12,18 @@ function loadInitial(): UserState {
   try {
     const userId = localStorage.getItem("userId");
     const username = localStorage.getItem("username");
-    if (userId && username) return { userId, username };
+    if (userId) return { userId, username };
   } catch {
     /* ignore */
   }
-  return { userId: null, username: null };
+  // If no userId exists yet, create one immediately and try to persist
+  const newId = generateUUID();
+  try {
+    localStorage.setItem("userId", newId);
+  } catch {
+    /* ignore persistence */
+  }
+  return { userId: newId, username: null };
 }
 
 export const user = writable<UserState>(loadInitial());
@@ -40,10 +47,14 @@ export function setUsername(username: string) {
   const cleaned = trimmed.toLowerCase().replace(/[^a-z]/g, "");
   if (!cleaned) return;
   if (cleaned.length < USERNAME_MIN || cleaned.length > USERNAME_MAX) return;
-  const userId = `${cleaned}-${generateUUID()}`;
-  user.set({ userId, username: cleaned });
+  // Keep existing userId as a stable opaque ID
+  let current: UserState | undefined;
+  const unsub = user.subscribe((v) => (current = v));
+  unsub();
+  const ensuredId = current?.userId ?? generateUUID();
+  user.set({ userId: ensuredId, username: cleaned });
   try {
-    localStorage.setItem("userId", userId);
+    localStorage.setItem("userId", ensuredId);
     localStorage.setItem("username", cleaned);
   } catch {
     /* ignore persistence */
