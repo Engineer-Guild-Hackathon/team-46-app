@@ -40,6 +40,9 @@
   function onKeydown(e: KeyboardEvent) {
     dispatch("sentenceKeydown", { idx, event: e });
   }
+  function onDblclick(e: MouseEvent) {
+    dispatch("sentenceDblclick", { idx, event: e });
+  }
 </script>
 
 <span
@@ -56,6 +59,7 @@
   on:pointermove={onPointerMove}
   on:pointerup={onPointerUp}
   on:keydown={onKeydown}
+  on:dblclick={onDblclick}
   aria-pressed={selected}
 >
   {@html renderSentenceHTML(

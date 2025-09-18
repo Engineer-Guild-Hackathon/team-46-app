@@ -33,7 +33,10 @@
   } from "$lib/api/logging";
   import SentenceInline from "$lib/pages/components/SentenceInline.svelte";
   import { recordWordsRead as persistWordsRead } from "$lib/pages/readingStats";
-  import { addCardIfMissing } from "$lib/pages/flashcardsStore";
+  import {
+    addCardIfMissing,
+    removeDefinitionOrDelete,
+  } from "$lib/pages/flashcardsStore";
 
   export let bookId: string;
 
@@ -114,6 +117,11 @@
   const subtitleRefs: Record<number, HTMLElement | null> = {};
   let currentSubtitle: string | null = null;
   let _subtitleUpdateTimer: number | null = null;
+  // Double-tap tracking for mobile (unselect)
+  let _lastTapAt = 0;
+  let _lastTapSentence: number | null = null;
+  let _lastTapWord: number | null = null;
+  const DOUBLE_TAP_MS = 350;
 
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
   async function loadPage(
@@ -368,18 +376,51 @@
     if (idx == null) return;
     const set = wordHighlights[i] || (wordHighlights[i] = new Set<number>());
     if (set.has(idx)) {
-      set.delete(idx);
-      if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
-      if (set.size === 0) delete wordHighlights[i];
-      reassignWordHighlights();
-      hideWordTooltip(i);
-      // remove persisted clicked word index
-      try {
-        const s = sentences[i];
-        removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
-      } catch {
-        /* ignore */
+      // Already selected: if this is a double-tap/click on same word -> unselect
+      const now = Date.now();
+      const isDouble =
+        _lastTapSentence === i &&
+        _lastTapWord === idx &&
+        now - _lastTapAt <= DOUBLE_TAP_MS;
+      if (isDouble) {
+        set.delete(idx);
+        if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
+        if (set.size === 0) delete wordHighlights[i];
+        reassignWordHighlights();
+        hideWordTooltip(i);
+        // remove persisted clicked word index
+        try {
+          const s = sentences[i];
+          removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+        } catch {
+          /* ignore */
+        }
+        // also remove definition from flashcards (mobile double-tap path)
+        try {
+          const sentence = sentences[i];
+          const rawText = sentence?.en ?? "";
+          const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+          const words: string[] = [];
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(rawText)) !== null) words.push(m[0]);
+          const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+          const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
+          console.debug("[Flashcards] mobile unselect -> remove", {
+            wordId: wordValue,
+            def,
+          });
+          if (def) removeDefinitionOrDelete(wordValue, def);
+        } catch {
+          /* ignore flashcard removal */
+        }
+      } else {
+        // Single click on selected word: re-display tooltip only
+        wordTooltipWordIndex[i] = idx;
+        showWordTooltip(i, idx);
       }
+      _lastTapAt = now;
+      _lastTapSentence = i;
+      _lastTapWord = idx;
       return;
     }
     set.add(idx);
@@ -429,6 +470,49 @@
       /* ignore word log */
     }
     showWordTooltip(i, idx);
+    // record tap for potential double-tap
+    _lastTapAt = Date.now();
+    _lastTapSentence = i;
+    _lastTapWord = idx;
+  }
+
+  // Double-click: unselect a highlighted word
+  function handleDblclick(i: number, e: MouseEvent) {
+    if (e.button !== 0) return;
+    const idx = getWordIndexAtPointer(i, e as unknown as PointerEvent);
+    if (idx == null) return;
+    const set = wordHighlights[i];
+    if (!set || !set.has(idx)) return;
+    set.delete(idx);
+    if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
+    if (set.size === 0) delete wordHighlights[i];
+    reassignWordHighlights();
+    hideWordTooltip(i);
+    // remove persisted clicked word index
+    try {
+      const s = sentences[i];
+      removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+    } catch {
+      /* ignore */
+    }
+    // remove definition from flashcards (if present)
+    try {
+      const sentence = sentences[i];
+      const rawText = sentence?.en ?? "";
+      const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+      const words: string[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(rawText)) !== null) words.push(m[0]);
+      const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+      const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
+      console.debug("[Flashcards] desktop unselect -> remove", {
+        wordId: wordValue,
+        def,
+      });
+      if (def) removeDefinitionOrDelete(wordValue, def);
+    } catch {
+      /* ignore flashcard removal */
+    }
   }
 
   // Context menu (right-click): toggle sentence translation
@@ -1208,6 +1292,8 @@
                         touchPointerMove(ev.detail.idx, ev.detail.event)}
                       on:sentencePointerUp={(ev) =>
                         touchPointerUp(ev.detail.idx, ev.detail.event)}
+                      on:sentenceDblclick={(ev) =>
+                        handleDblclick(ev.detail.idx, ev.detail.event)}
                       on:sentenceKeydown={(ev) => {
                         const e = ev.detail.event as KeyboardEvent;
                         if (e.key === "Enter" || e.key === " ") {
