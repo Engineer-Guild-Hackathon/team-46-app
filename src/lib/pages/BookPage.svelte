@@ -123,6 +123,26 @@
   let _lastTapWord: number | null = null;
   const DOUBLE_TAP_MS = 350;
 
+  // Usage help (collapsible) — default open, persist preference
+  const HELP_STORAGE_KEY = "reader:usageHelpOpen";
+  let helpOpen = true;
+  onMount(() => {
+    try {
+      const v = localStorage.getItem(HELP_STORAGE_KEY);
+      if (v !== null) helpOpen = v === "1" || v === "true";
+    } catch {
+      /* ignore */
+    }
+  });
+  function toggleHelp() {
+    helpOpen = !helpOpen;
+    try {
+      localStorage.setItem(HELP_STORAGE_KEY, helpOpen ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
   async function loadPage(
     start = 0,
@@ -1241,12 +1261,55 @@
         onclick={handleDifficult}>難易度を下げる</Button
       >
     </header>
-    <p
-      class="interaction-help text-[0.7rem] text-gray-600 mt-3 text-center shrink-0"
-      aria-label="Usage help"
-    >
-      クリックで単語表示、長押しで文章の意味を表示
-    </p>
+    <div class="interaction-help mt-4" aria-label="Usage help">
+      <div
+        class="mx-auto w-full bg-card/80 border border-[var(--border)] rounded-xl px-3 py-2 shadow-sm"
+      >
+        <div class="flex items-center justify-between">
+          <div
+            class="text-[11px] uppercase tracking-wide text-muted-foreground"
+          >
+            使い方
+          </div>
+          <button
+            type="button"
+            class="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+            aria-expanded={helpOpen}
+            aria-controls="usage-help-content"
+            on:click={toggleHelp}
+          >
+            {helpOpen ? "隠す" : "表示"}
+          </button>
+        </div>
+        {#if helpOpen}
+          <ul
+            id="usage-help-content"
+            class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-muted-foreground"
+            role="list"
+          >
+            <li class="flex items-center gap-2">
+              <span class="inline-block size-1.5 rounded-full bg-primary/60"
+              ></span>
+              <span>クリックで単語表示</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="inline-block size-1.5 rounded-full bg-primary/60"
+              ></span>
+              {#if window.innerWidth > 640}
+                <span>長押し＋右クリックで文章の意味を表示</span>
+              {:else}
+                <span>長押しで文章の意味を表示</span>
+              {/if}
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="inline-block size-1.5 rounded-full bg-primary/60"
+              ></span>
+              <span>ダブルクリックで選択解除</span>
+            </li>
+          </ul>
+        {/if}
+      </div>
+    </div>
 
     {#if loading}
       <section class="book-text mt-2 flex-1 min-h-0">

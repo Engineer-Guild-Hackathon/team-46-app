@@ -177,6 +177,7 @@
     <CardContent>
       <Button
         class="border rounded-xl p-8 text-center min-h-40 w-full flex items-center justify-center text-xl mt-2 select-none cursor-pointer"
+        variant="outline"
         onclick={flip}
         on:keydown={(e) => {
           if (e.key === "Enter") {
@@ -201,17 +202,29 @@
       </Button>
 
       <div class="mt-4 flex flex-wrap items-center gap-3 justify-center">
-        <Button class="border" onclick={() => grade(1)} aria-label="Again (1)"
-          >Again</Button
+        <Button
+          variant="outline"
+          class="border"
+          onclick={() => grade(1)}
+          aria-label="Again (1)">Again</Button
         >
-        <Button class="border" onclick={() => grade(3)} aria-label="Hard (3)"
-          >Hard</Button
+        <Button
+          variant="outline"
+          class="border"
+          onclick={() => grade(3)}
+          aria-label="Hard (3)">Hard</Button
         >
-        <Button class="border" onclick={() => grade(4)} aria-label="Good (4)"
-          >Good</Button
+        <Button
+          variant="outline"
+          class="border"
+          onclick={() => grade(4)}
+          aria-label="Good (4)">Good</Button
         >
-        <Button class="border" onclick={() => grade(5)} aria-label="Easy (5)"
-          >Easy</Button
+        <Button
+          variant="outline"
+          class="border"
+          onclick={() => grade(5)}
+          aria-label="Easy (5)">Easy</Button
         >
       </div>
     </CardContent>

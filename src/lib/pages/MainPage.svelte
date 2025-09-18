@@ -56,7 +56,7 @@
         variant="ghost"
         class={selectedView === "browse"
           ? "bg-accent-foreground rounded-xl"
-          : ""}
+          : "rounded-xl"}
         onclick={() => (location.hash = "#/")}>Browse</Button
       >
       <Button
@@ -64,7 +64,7 @@
         variant="ghost"
         class={selectedView === "stats"
           ? "bg-accent-foreground rounded-xl"
-          : ""}
+          : "rounded-xl"}
         onclick={() => (location.hash = "#/stats")}>Stats</Button
       >
       <Button
@@ -72,7 +72,7 @@
         variant="ghost"
         class={selectedView === "flashcards"
           ? "bg-accent-foreground rounded-xl"
-          : ""}
+          : "rounded-xl"}
         onclick={() => (location.hash = "#/flashcards")}>Flashcards</Button
       >
     </div>
