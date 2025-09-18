@@ -27,16 +27,52 @@ export function renderSentenceHTML(
   tooltipWordIdx?: number,
 ): string {
   const raw = formatSentence(s.en);
+  
+  // Split into italic segments using underscore delimiters: _..._
+  // Underscores are removed from output; text between is italic.
+  const segments: Array<{ text: string; italic: boolean }> = [];
+  {
+    let italic = false;
+    let buf = "";
+    for (let ci = 0; ci < raw.length; ci++) {
+      const ch = raw[ci];
+      if (ch === "_") {
+        if (buf) {
+          segments.push({ text: buf, italic });
+          buf = "";
+        }
+        italic = !italic;
+      } else {
+        buf += ch;
+      }
+    }
+    if (buf) segments.push({ text: buf, italic });
+  }
+
   // If phrase segmentation is provided (via en_word array), render phrases by
   // merging base words with a two-pointer algorithm to preserve punctuation.
   const enPhrases =
     Array.isArray(s.en_word) && s.en_word.length > 0 ? s.en_word : null;
   if (enPhrases) {
-    const wordRe = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
-    // Collect base word matches with positions
+    // For phrase segmentation, we need to reconstruct the text without underscores
+    // but track which parts should be italic
+    const reconstructedText = segments.map(seg => seg.text).join("");
+    const wordRe = /[A-Za-z0-9]+(?:[''-][A-Za-z0-9]+)*/g;
+    
+    // Create a mapping from character positions in reconstructedText to italic status
+    const italicMap = new Map<number, boolean>();
+    let pos = 0;
+    for (const seg of segments) {
+      for (let i = 0; i < seg.text.length; i++) {
+        italicMap.set(pos + i, seg.italic);
+      }
+      pos += seg.text.length;
+    }
+    
+    // Collect base word matches with positions in reconstructed text
     const wordMatches: Array<{ start: number; end: number; text: string }> = [];
     let m: RegExpExecArray | null;
-    while ((m = wordRe.exec(raw)) !== null) {
+    while ((m = wordRe.exec(reconstructedText)) !== null) {
       wordMatches.push({
         start: m.index,
         end: m.index + m[0].length,
@@ -67,13 +103,31 @@ export function renderSentenceHTML(
         const start = slice[0].start;
         const end = slice[slice.length - 1].end;
         // push any text between previous end and this phrase start (spaces/punct)
-        if (start > prevEnd) out.push(esc(raw.slice(prevEnd, start)));
-        const visible = raw.slice(start, end);
+        if (start > prevEnd) {
+          const betweenText = reconstructedText.slice(prevEnd, start);
+          // Check if this between-text should be italic
+          const isItalicBetween = italicMap.get(prevEnd) || false;
+          const escapedBetween = esc(betweenText);
+          out.push(isItalicBetween ? `<span class="italic">${escapedBetween}</span>` : escapedBetween);
+        }
+        const visible = reconstructedText.slice(start, end);
         const isHighlighted = !!highlightSet && highlightSet.has(pi);
         const baseCls = "word inline relative cursor-pointer whitespace-normal";
         const highlightCls =
           "text-[#0a56ad] underline decoration-[#0a56ad] decoration-2 underline-offset-2";
+        
+        // Check if this phrase should be italic (check if any character in the phrase is italic)
+        let isItalicPhrase = false;
+        for (let pos = start; pos < end; pos++) {
+          if (italicMap.get(pos)) {
+            isItalicPhrase = true;
+            break;
+          }
+        }
+        
         const cls = isHighlighted ? `${baseCls} ${highlightCls}` : baseCls;
+        const finalCls = isItalicPhrase ? `${cls} italic` : cls;
+        
         if (isHighlighted && tooltipVisible && pi === tooltipWordIdx) {
           const jp = s.jp_word?.[pi];
           const tip =
@@ -81,11 +135,11 @@ export function renderSentenceHTML(
           const tipCls =
             "word-tooltip absolute left-1/2 -translate-x-1/2 bottom-full mb-2 transform bg-slate-800 text-white text-xs leading-tight px-2 py-1 rounded shadow z-50 pointer-events-none whitespace-nowrap";
           out.push(
-            `<span class="${cls}" data-wi="${pi}">${esc(visible)}<span class="${tipCls}" aria-label="Japanese translation">${tip}</span></span>`,
+            `<span class="${finalCls}" data-wi="${pi}">${esc(visible)}<span class="${tipCls}" aria-label="Japanese translation">${tip}</span></span>`,
           );
         } else {
           out.push(
-            `<span class="${cls}" data-wi="${pi}">${esc(visible)}</span>`,
+            `<span class="${finalCls}" data-wi="${pi}">${esc(visible)}</span>`,
           );
         }
         prevEnd = end;
@@ -94,13 +148,23 @@ export function renderSentenceHTML(
       } else {
         // If phrase doesn't align (unexpected), fallback to single base word as its own segment
         const w = wordMatches[wi];
-        if (w.start > prevEnd) out.push(esc(raw.slice(prevEnd, w.start)));
+        if (w.start > prevEnd) {
+          const betweenText = reconstructedText.slice(prevEnd, w.start);
+          const isItalicBetween = italicMap.get(prevEnd) || false;
+          const escapedBetween = esc(betweenText);
+          out.push(isItalicBetween ? `<span class="italic">${escapedBetween}</span>` : escapedBetween);
+        }
         const isHighlighted = !!highlightSet && highlightSet.has(pi);
         const baseCls = "word inline relative cursor-pointer whitespace-normal";
         const highlightCls =
           "text-[#0a56ad] underline decoration-[#0a56ad] decoration-2 underline-offset-2";
+        
+        // Check if this word should be italic
+        const isItalicWord = italicMap.get(w.start) || false;
         const cls = isHighlighted ? `${baseCls} ${highlightCls}` : baseCls;
-        out.push(`<span class="${cls}" data-wi="${pi}">${esc(w.text)}</span>`);
+        const finalCls = isItalicWord ? `${cls} italic` : cls;
+        
+        out.push(`<span class="${finalCls}" data-wi="${pi}">${esc(w.text)}</span>`);
         prevEnd = w.end;
         wi += 1;
         pi += 1; // advance phrase as well to keep indices roughly aligned
@@ -109,32 +173,21 @@ export function renderSentenceHTML(
     // flush remaining tail text (including any punctuation after the last word)
     if (wi < wordMatches.length) {
       const lastEnd = wordMatches[wordMatches.length - 1].end;
-      if (prevEnd < lastEnd) out.push(esc(raw.slice(prevEnd, lastEnd)));
+      if (prevEnd < lastEnd) {
+        const tailText = reconstructedText.slice(prevEnd, lastEnd);
+        const isItalicTail = italicMap.get(prevEnd) || false;
+        const escapedTail = esc(tailText);
+        out.push(isItalicTail ? `<span class="italic">${escapedTail}</span>` : escapedTail);
+      }
       prevEnd = lastEnd;
     }
-    if (prevEnd < raw.length) out.push(esc(raw.slice(prevEnd)));
-    return out.join("");
-  }
-
-  // Split into italic segments using underscore delimiters: _..._
-  // Underscores are removed from output; text between is italic.
-  const segments: Array<{ text: string; italic: boolean }> = [];
-  {
-    let italic = false;
-    let buf = "";
-    for (let ci = 0; ci < raw.length; ci++) {
-      const ch = raw[ci];
-      if (ch === "_") {
-        if (buf) {
-          segments.push({ text: buf, italic });
-          buf = "";
-        }
-        italic = !italic;
-      } else {
-        buf += ch;
-      }
+    if (prevEnd < reconstructedText.length) {
+      const finalText = reconstructedText.slice(prevEnd);
+      const isItalicFinal = italicMap.get(prevEnd) || false;
+      const escapedFinal = esc(finalText);
+      out.push(isItalicFinal ? `<span class="italic">${escapedFinal}</span>` : escapedFinal);
     }
-    if (buf) segments.push({ text: buf, italic });
+    return out.join("");
   }
 
   // match words including internal apostrophes (ASCII and Unicode) and hyphens

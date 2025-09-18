@@ -151,3 +151,8 @@
     "Libre Caslon Text", ui-serif, Georgia, Cambria, "Times New Roman", Times,
     serif;
 }
+
+/* Italic text formatting for reader content */
+.italic {
+  font-style: italic;
+}

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Italic</title>
+    <style>
+        .italic {
+            font-style: italic;
+        }
+        .word {
+            background: #f0f0f0;
+            margin: 2px;
+            padding: 2px;
+        }
+        .word.italic {
+            background: #ffe0e0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Testing Italic Functionality</h1>
+    <div id="test-output"></div>
+    
+    <script type="module">
+        // Import the renderSentenceHTML function
+        import { renderSentenceHTML } from './src/lib/pages/bookPageUtils.ts';
+        
+        const testSentence = {
+            en: "There was nothing so _very_ remarkable in that; nor did Alice think it so _very_ much",
+            type: "text"
+        };
+        
+        const html = renderSentenceHTML(0, testSentence);
+        document.getElementById('test-output').innerHTML = html;
+        
+        console.log('Generated HTML:', html);
+    </script>
+</body>
+</html>

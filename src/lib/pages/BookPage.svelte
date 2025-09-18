@@ -74,6 +74,7 @@
   // Per-book top-sentence number storage (stable across loads and resizes)
   const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
   let _scrollSaveTimer: number | null = null;
+  let _beforeUnloadHandler: (() => void) | null = null;
   const SCROLL_SAVE_DEBOUNCE = 200;
 
   function getTopVisibleSentenceIndex(): number | null {
