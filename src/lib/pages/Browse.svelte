@@ -156,12 +156,7 @@
     </div>
   {:else}
     {#each books as b (b.id)}
-      <div
-        class="rounded-lg shadow-sm hover:shadow-md transition"
-        role="article"
-      >
-        <BookCard book={b} onOpen={openBook} />
-      </div>
+      <BookCard book={b} onOpen={openBook} />
     {/each}
   {/if}
 </section>
