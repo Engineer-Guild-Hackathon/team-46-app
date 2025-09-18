@@ -1224,7 +1224,7 @@
         type="button"
         aria-label="Mark difficult"
         disabled={loading}
-        on:click={handleDifficult}>難易度を下げる</Button
+        onclick={handleDifficult}>難易度を下げる</Button
       >
     </div>
   </div>

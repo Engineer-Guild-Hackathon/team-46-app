@@ -2,6 +2,8 @@
   import { Button } from "$lib/components/ui/button";
   import { onMount, onDestroy } from "svelte";
   import Browse from "./Browse.svelte";
+  import Stats from "./Stats.svelte";
+  import Flashcards from "./Flashcards.svelte";
 
   // View selection state (moved here so it's available app-wide)
   let selectedView: "browse" | "stats" | "flashcards" = "browse";
@@ -37,13 +39,9 @@
   {#if selectedView === "browse"}
     <Browse />
   {:else if selectedView === "stats"}
-    <div class="py-12 text-center text-gray-600">
-      Statistics page (placeholder)
-    </div>
+    <Stats />
   {:else}
-    <div class="py-12 text-center text-gray-600">
-      Flashcards page (placeholder)
-    </div>
+    <Flashcards />
   {/if}
 </main>
 
@@ -59,7 +57,7 @@
         class={selectedView === "browse"
           ? "bg-accent-foreground rounded-xl"
           : ""}
-        on:click={() => (location.hash = "#/")}>Browse</Button
+        onclick={() => (location.hash = "#/")}>Browse</Button
       >
       <Button
         size="sm"
@@ -67,7 +65,7 @@
         class={selectedView === "stats"
           ? "bg-accent-foreground rounded-xl"
           : ""}
-        on:click={() => (location.hash = "#/stats")}>Stats</Button
+        onclick={() => (location.hash = "#/stats")}>Stats</Button
       >
       <Button
         size="sm"
@@ -75,7 +73,7 @@
         class={selectedView === "flashcards"
           ? "bg-accent-foreground rounded-xl"
           : ""}
-        on:click={() => (location.hash = "#/flashcards")}>Flashcards</Button
+        onclick={() => (location.hash = "#/flashcards")}>Flashcards</Button
       >
     </div>
   </nav>
