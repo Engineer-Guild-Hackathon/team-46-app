@@ -20,7 +20,7 @@
   onDestroy(() => window.removeEventListener("hashchange", updateFromHash));
 </script>
 
-<header class="sticky top-0 z-20 bg-transparent backdrop-blur-lg border-0">
+<header class="sticky top-0 z-1 bg-transparent backdrop-blur-lg border-0">
   <div
     class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between"
   >
@@ -46,7 +46,7 @@
 </main>
 
 <!-- Footer navigation: Browse / Stats / Flashcards -->
-<footer class="fixed bottom-4 left-0 right-0 pointer-events-none z-20">
+<footer class="fixed bottom-4 left-0 right-0 pointer-events-none z-1">
   <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     <div
       class="bg-card backdrop-blur-sm rounded-full mx-auto w-max px-3 py-2 flex items-center gap-2 shadow-sm pointer-events-auto"

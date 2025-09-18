@@ -8,7 +8,8 @@
   import { BarChart } from "$lib/components/ui/chart";
   import { user } from "$lib/stores/user";
   import { derived } from "svelte/store";
-  import { Flame } from "@lucide/svelte";
+  import { Flame, Star, Settings } from "@lucide/svelte";
+  import GoalModal from "$lib/components/GoalModal.svelte";
   // Collapsible available if needed in future
 
   // Use reusable reading stats util
@@ -44,10 +45,74 @@
   const avgDaily = $derived(Math.round(totalThisWeek / 7));
   const currentStreak = $derived(stats.currentStreak);
   const longestStreak = $derived(stats.longestStreak);
+
+  // Weekly goal management with localStorage
+  const WEEKLY_GOAL_KEY = "reading-weekly-goal";
+  const DEFAULT_WEEKLY_GOAL = 1000;
+
+  let weeklyGoal = $state(
+    (() => {
+      if (typeof localStorage === "undefined") return DEFAULT_WEEKLY_GOAL;
+      try {
+        const stored = localStorage.getItem(WEEKLY_GOAL_KEY);
+        return stored ? parseInt(stored, 10) : DEFAULT_WEEKLY_GOAL;
+      } catch {
+        return DEFAULT_WEEKLY_GOAL;
+      }
+    })(),
+  );
+
+  function saveWeeklyGoal(goal: number) {
+    weeklyGoal = goal;
+    if (typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem(WEEKLY_GOAL_KEY, goal.toString());
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }
+
+  // Modal state for goal settings
+  let showGoalModal = $state(false);
+
+  function openGoalModal() {
+    showGoalModal = true;
+  }
+
+  function handleGoalSave(newGoal: number) {
+    saveWeeklyGoal(newGoal);
+    showGoalModal = false;
+  }
+
+  function handleGoalCancel() {
+    showGoalModal = false;
+  }
+
+  // Lightweight weekly goal (can be made user-configurable later)
+  const WEEKLY_GOAL = 1000;
+  const progressPct = $derived(
+    Math.max(0, Math.min(100, Math.round((totalThisWeek / weeklyGoal) * 100))),
+  );
+
+  // Simple GitHub-style intensity buckets for this week only
+  // 0: none, 1: low, 2: mid, 3: high, 4: very high
+  const buckets = $derived(
+    weeklyData.map((v) =>
+      v <= 0 ? 0 : v < 50 ? 1 : v < 150 ? 2 : v < 300 ? 3 : 4,
+    ),
+  );
+
+  // Derive a simple 0..5 weekly rating from progress percentage
+  const weeklyRating = $derived(
+    Math.max(0, Math.min(5, Math.round(progressPct / 20))),
+  );
 </script>
 
 <section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
-  <h2 class="pl-2 text-xl font-semibold text-neutral-700 dark:text-neutral-300">
+  <h2
+    class="pl-2 text-xl font-semibold text-neutral-700 dark:text-neutral-300 col-span-full"
+  >
     Your Reading Stats
   </h2>
   <Card>
@@ -70,28 +135,70 @@
   </Card>
   <Card class="md:col-span-2">
     <CardHeader>
-      <CardTitle>Weekly Reading</CardTitle>
+      <div class="flex items-center justify-between">
+        <CardTitle>Weekly Goal</CardTitle>
+        <button
+          onclick={openGoalModal}
+          class="p-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          aria-label="Edit weekly goal"
+        >
+          <Settings class="size-4 text-neutral-500" />
+        </button>
+      </div>
     </CardHeader>
     <CardContent>
-      <BarChart {labels} {datasets} />
+      <div class="text-sm mb-2">
+        {totalThisWeek} / {weeklyGoal} words
+      </div>
+      <div
+        class="w-full h-3 rounded bg-neutral-200 dark:bg-neutral-800 overflow-hidden"
+      >
+        <div
+          class="h-3 bg-emerald-500 transition-[width] duration-300"
+          style={`width: ${progressPct}%`}
+          aria-label="weekly goal progress"
+        ></div>
+      </div>
+      <div class="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
+        {progressPct}% complete
+      </div>
     </CardContent>
   </Card>
 
-  <Card>
-    <CardHeader>
-      <CardTitle>Summary</CardTitle>
-    </CardHeader>
-    <CardContent>
-      <ul class="text-sm space-y-2">
-        <li>Total Words This Week: <strong>{totalThisWeek}</strong></li>
-        <li>Avg. Daily: <strong>{avgDaily}</strong></li>
-        <li>
-          Longest Streak: <strong
-            >{longestStreak} day{longestStreak === 1 ? "" : "s"}</strong
-          >
-        </li>
-      </ul>
-    </CardContent>
-  </Card>
+  <div class="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+    <Card class="md:col-span-2">
+      <CardHeader>
+        <CardTitle>Weekly Reading</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div class="flex justify-center items-center">
+          <BarChart {labels} {datasets} class="max-w-full" />
+        </div>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle>Summary</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul class="text-sm space-y-2">
+          <li>Total Words This Week: <strong>{totalThisWeek}</strong></li>
+          <li>Avg. Daily: <strong>{avgDaily}</strong></li>
+          <li>
+            Longest Streak: <strong
+              >{longestStreak} day{longestStreak === 1 ? "" : "s"}</strong
+            >
+          </li>
+        </ul>
+      </CardContent>
+    </Card>
+  </div>
   <div class="h-12"></div>
 </section>
+
+<GoalModal
+  isOpen={showGoalModal}
+  currentGoal={weeklyGoal}
+  onSave={handleGoalSave}
+  onCancel={handleGoalCancel}
+/>
