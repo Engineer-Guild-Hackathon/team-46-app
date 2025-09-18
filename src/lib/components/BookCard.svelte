@@ -10,7 +10,7 @@
   type="button"
   on:click={handleClick}
   aria-label={`Open ${book.title}`}
-  class="flex flex-col border-0 rounded-[14px] overflow-hidden transition-transform duration-200 ease-out shadow-sm hover:-translate-y-1.5 hover:shadow-xl text-left cursor-pointer p-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 focus-visible:ring-offset-2"
+  class="bg-card flex flex-col border-0 rounded-[14px] overflow-hidden transition-transform duration-200 ease-out shadow-sm hover:-translate-y-1.5 hover:shadow-xl text-left cursor-pointer p-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60 focus-visible:ring-offset-2"
 >
   <div class="relative w-full">
     <div class="w-full aspect-[2/3] overflow-hidden chromatic-ignore">

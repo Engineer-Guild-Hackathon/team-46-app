@@ -49,7 +49,7 @@
 <footer class="fixed bottom-4 left-0 right-0 pointer-events-none z-20">
   <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     <div
-      class="bg-white backdrop-blur-sm border border-gray-200 rounded-full mx-auto w-max px-3 py-2 flex items-center gap-2 shadow-sm pointer-events-auto"
+      class="bg-card backdrop-blur-sm rounded-full mx-auto w-max px-3 py-2 flex items-center gap-2 shadow-sm pointer-events-auto"
     >
       <Button
         size="sm"

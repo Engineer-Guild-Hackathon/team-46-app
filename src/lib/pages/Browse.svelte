@@ -84,7 +84,7 @@
   });
 </script>
 
-<div class="mb-6">
+<div class="z-20 sticky top-0 mb-6">
   <form
     class="flex flex-col gap-3"
     role="search"
@@ -94,7 +94,7 @@
     }}
   >
     <div
-      class="flex flex-grow rounded-2xl bg-accent-foreground h-12 items-center shadow-sm px-3 py-2 w-full max-w-md"
+      class="flex flex-grow rounded-2xl bg-card h-12 items-center shadow-sm px-3 py-2 w-full max-w-md"
     >
       <button
         type="submit"
@@ -114,7 +114,7 @@
       />
     </div>
     <Select.Root type="single" bind:value={sortValue}>
-      <Select.Trigger class="px-3 py-1 rounded-2xl h-12 bg-accent-foreground ">
+      <Select.Trigger class="px-3 py-1 rounded-2xl h-12 bg-card">
         {triggerContent}
       </Select.Trigger>
       <Select.Content>
@@ -140,7 +140,7 @@
 >
   {#if loading}
     {#each skeletonIndices as _}
-      <div class="rounded-lg bg-white shadow-sm overflow-hidden animate-pulse">
+      <div class="rounded-lg bg-card shadow-sm overflow-hidden animate-pulse">
         <div class="aspect-[2/3] bg-gray-200"></div>
         <div class="p-4">
           <div class="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>

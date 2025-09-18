@@ -6,52 +6,258 @@
     CardContent,
   } from "$lib/components/ui/card";
   import { Button } from "$lib/components/ui/button";
+  import {
+    Collapsible as CollapsibleRoot,
+    CollapsibleTrigger,
+    CollapsibleContent,
+  } from "$lib/components/ui/collapsible";
+  import {
+    buildDeck,
+    dueQueue,
+    gradeCard,
+    loadState,
+    saveState,
+    stats as deckStats,
+    categorize,
+    categoryOf,
+    type CardItem as FCItem,
+    type DeckState,
+    type Grade,
+    type ScheduledCard,
+  } from "./flashcardScheduler";
+  import * as Table from "$lib/components/ui/table/index.js";
+  import { onMount, onDestroy } from "svelte";
+  import Chart from "chart.js/auto";
 
-  type CardItem = { front: string; back: string };
-  let deck: CardItem[] = [
-    { front: "ubiquitous", back: "present, appearing, or found everywhere" },
-    { front: "laconic", back: "using very few words" },
-    { front: "aplomb", back: "self-confidence or assurance" },
+  let collapsibleOpen = $state(false);
+
+  // Seed data; replace with real words later
+  const seed: FCItem[] = [
+    {
+      id: "ubiquitous",
+      front: "ubiquitous",
+      back: "present, appearing, or found everywhere",
+    },
+    { id: "laconic", front: "laconic", back: "using very few words" },
+    { id: "aplomb", front: "aplomb", back: "self-confidence or assurance" },
   ];
-  let index = 0;
-  let showBack = false;
+
+  let deck: DeckState = buildDeck(seed, loadState());
+  let queue = $state<ScheduledCard[]>([]);
+  let current = $state<ScheduledCard | undefined>(undefined);
+  let showBack = $state(false);
+  let s = $state(deckStats(deck));
+  let cats = $state(categorize(deck));
+  let pieEl: HTMLCanvasElement | null = null;
+  let pie: Chart | null = null;
+
+  function refresh() {
+    queue = dueQueue(deck);
+    current = queue[0];
+    s = deckStats(deck);
+    cats = categorize(deck);
+  }
 
   function flip() {
+    if (!current) return;
     showBack = !showBack;
   }
-  function grade(_quality: 1 | 2 | 3 | 4 | 5) {
-    // Placeholder: rotate the deck
-    index = (index + 1) % deck.length;
+
+  function grade(quality: Grade) {
+    if (!current) return;
+    const { next } = gradeCard(current, quality);
+    deck.cards = deck.cards.map((c) =>
+      c.id === current!.id ? { ...c, ...next } : c,
+    );
+    saveState(deck);
     showBack = false;
+    refresh();
   }
+
+  refresh();
+
+  function pieData() {
+    return [cats["not-learned"], cats.learning, cats.developed, cats.mastered];
+  }
+
+  const colors = [
+    "rgb(156,163,175)", // gray-400
+    "rgb(59,130,246)", // blue-500
+    "rgb(245,158,11)", // amber-500
+    "rgb(16,185,129)", // emerald-500
+  ];
+
+  onMount(() => {
+    if (!pieEl) return;
+    pie = new Chart(pieEl, {
+      type: "pie",
+      data: {
+        labels: ["Not learned", "Learning", "Developed", "Mastered"],
+        datasets: [
+          {
+            data: pieData(),
+            backgroundColor: colors,
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: true },
+        },
+      },
+    });
+  });
+
+  $effect(() => {
+    if (pie) {
+      pie.data.datasets[0].data = pieData();
+      pie.update();
+    }
+  });
+
+  onDestroy(() => {
+    pie?.destroy();
+  });
 </script>
 
-<section class="max-w-3xl mx-auto">
+<section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
+  <h2 class="pl-2 text-xl font-semibold text-neutral-700 dark:text-neutral-300">
+    Word Flashcards
+  </h2>
+  <!-- Stats + Categories -->
+  <Card>
+    <CardHeader>
+      <CardTitle>Study overview</CardTitle>
+    </CardHeader>
+    <CardContent class="text-sm text-muted-foreground">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <span>Due: {queue.length}</span>
+          <span class="mx-2">•</span>
+          <span>Total: {s.total}</span>
+          <span class="mx-2">•</span>
+          <span>New: {s.new}</span>
+        </div>
+        <div class="flex items-center gap-6">
+          <div class="size-28">
+            <canvas bind:this={pieEl} aria-label="Progress pie chart"></canvas>
+          </div>
+          <div class="grid grid-cols-1 gap-2 text-foreground">
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-block size-3 rounded-full"
+                style="background: rgb(156,163,175)"
+              ></span>
+              Not learned: {cats["not-learned"]}
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-block size-3 rounded-full"
+                style="background: rgb(59,130,246)"
+              ></span>
+              Learning: {cats.learning}
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-block size-3 rounded-full"
+                style="background: rgb(245,158,11)"
+              ></span>
+              Developed: {cats.developed}
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-block size-3 rounded-full"
+                style="background: rgb(16,185,129)"
+              ></span>
+              Mastered: {cats.mastered}
+            </div>
+          </div>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+
+  <!-- Flashcard Card -->
   <Card>
     <CardHeader>
       <CardTitle>Flashcards</CardTitle>
     </CardHeader>
     <CardContent>
-      <div
-        class="border rounded-xl p-8 text-center min-h-40 flex items-center justify-center text-xl"
+      <Button
+        class="border rounded-xl p-8 text-center min-h-40 w-full flex items-center justify-center text-xl mt-2 select-none cursor-pointer"
+        on:click={flip}
+        on:keydown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            flip();
+          }
+        }}
+        aria-label="Flashcard"
+        type="button"
       >
-        {#if deck.length}
+        {#if current}
           {#if showBack}
-            {deck[index].back}
+            {current.back}
           {:else}
-            {deck[index].front}
+            {current.front}
           {/if}
-        {:else}
+        {:else if s.total === 0}
           No cards.
+        {:else}
+          All done for now. 🎉
         {/if}
-      </div>
-      <div class="mt-4 flex items-center gap-3 justify-center">
-        <Button variant="secondary" onclick={flip}>Flip</Button>
-        <Button variant="ghost" onclick={() => grade(1)}>Again</Button>
-        <Button variant="outline" onclick={() => grade(3)}>Hard</Button>
-        <Button onclick={() => grade(4)}>Good</Button>
-        <Button variant="secondary" onclick={() => grade(5)}>Easy</Button>
+      </Button>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3 justify-center">
+        <Button class="border" on:click={() => grade(1)} aria-label="Again (1)"
+          >Again</Button
+        >
+        <Button class="border" on:click={() => grade(3)} aria-label="Hard (3)"
+          >Hard</Button
+        >
+        <Button class="border" on:click={() => grade(4)} aria-label="Good (4)"
+          >Good</Button
+        >
+        <Button class="border" on:click={() => grade(5)} aria-label="Easy (5)"
+          >Easy</Button
+        >
       </div>
     </CardContent>
   </Card>
+
+  <!-- Collapsible full list -->
+  <div
+    class="max-w-3xl mx-auto bg-card text-card-foreground flex flex-col gap-6 rounded-xl border p-6 shadow-sm w-full"
+  >
+    <CollapsibleRoot bind:open={collapsibleOpen}>
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">All words</h2>
+        <CollapsibleTrigger class="underline text-sm">
+          {#if collapsibleOpen}
+            Hide
+          {:else}
+            Show
+          {/if}
+        </CollapsibleTrigger>
+      </div>
+      <CollapsibleContent>
+        <Table.Root>
+          <Table.Header>
+            <Table.Row>
+              <Table.Head>Word</Table.Head>
+              <Table.Head>JP</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            <Table.Row>
+              <Table.Cell>daisy-chain</Table.Cell>
+              <Table.Cell>雛菊の花冠</Table.Cell>
+            </Table.Row>
+          </Table.Body>
+        </Table.Root>
+      </CollapsibleContent>
+    </CollapsibleRoot>
+  </div>
+  <div class="h-12"></div>
 </section>

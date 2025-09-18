@@ -104,3 +104,23 @@ if (!(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver) {
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
     RO as unknown;
 }
+
+// Polyfill window.matchMedia for components relying on media queries in jsdom
+if (
+  typeof window !== "undefined" &&
+  typeof (window as any).matchMedia !== "function"
+) {
+  window.matchMedia = (query: string) => {
+    const mql: MediaQueryList = {
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {}, // deprecated API
+      removeListener: () => {}, // deprecated API
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+    return mql;
+  };
+}

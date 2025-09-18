@@ -9,6 +9,8 @@
   import { user } from "$lib/stores/user";
   import { derived } from "svelte/store";
   import { Flame } from "@lucide/svelte";
+  import * as Collapsible from "$lib/components/ui/collapsible/index.js";
+  let ratingOpen = false;
 
   // Simple derived rating: demo placeholder until backed by real data
   // Rating scale: 0..5 (half-steps supported); persisted elsewhere in future
@@ -63,26 +65,6 @@
           </div>
         </div>
       </div>
-    </CardContent>
-  </Card>
-  <Card class="md:col-span-2">
-    <CardHeader>
-      <CardTitle>Your Rating: 1520</CardTitle>
-    </CardHeader>
-    <CardContent>
-      <LineChart
-        labels={["01-Oct", "08-Oct", "15-Oct", "22-Oct"]}
-        datasets={[
-          {
-            label: "Rating Movement",
-            data: [1300, 1400, 1450, 1520],
-            backgroundColor: "rgba(75, 192, 192, 0.2)",
-            borderColor: "rgba(75, 192, 192, 1)",
-            borderWidth: 2,
-            tension: 0,
-          },
-        ]}
-      />
     </CardContent>
   </Card>
   <Card class="md:col-span-2">
