@@ -116,7 +116,11 @@
   let _subtitleUpdateTimer: number | null = null;
 
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
-  async function loadPage(start = 0, charCountParam?: number) {
+  async function loadPage(
+    start = 0,
+    charCountParam?: number,
+    isDifficult?: boolean,
+  ) {
     const isInitial = start === 0;
     if (isInitial) loading = true;
     error = null;
@@ -151,10 +155,8 @@
             localStorage.getItem("userId")) ||
           "anonymous",
         charCount: charCountParam,
-        wordClickCount: firstLoad ? null : wordClickCountForRequest,
-        sentenceClickCount: firstLoad ? null : sentenceClickCountForRequest,
+        difficultBtn: isDifficult || null,
         time: timeSec,
-        rate: userRate,
       };
       console.debug("[BookPage] getTextPage params ->", apiParams);
 
@@ -583,26 +585,15 @@
   // Difficulty button: adjust user rate and reload
   async function handleDifficult() {
     if (loading) return;
-    const prevRate = userRate ?? 0;
-    userRate = Math.max(0, prevRate - 300);
-    try {
-      localStorage.setItem(rateStorageKey(bookId), String(userRate));
-    } catch {
-      /* ignore persist */
-    }
-    console.debug("[BookPage] 難しい pressed: lowering rate", {
-      previous: prevRate,
-      new: userRate,
-    });
     // Log difficult button press with previous rate (state before adjustment)
     void logDifficultBtn(
       (typeof localStorage !== "undefined" && localStorage.getItem("userId")) ||
         "anonymous",
-      prevRate,
+      userRate,
     ).catch(() => {});
 
     // Re-load current page with same start & charCount using updated rate (force fresh fetch)
-    await loadPage(currentStart, getCharCountForViewport());
+    await loadPage(currentStart, getCharCountForViewport(), true);
   }
 
   // Position word tooltip to avoid clipping
@@ -1152,6 +1143,12 @@
           </div>
         {/if}
       </div>
+      <Button
+        variant="outline"
+        aria-label="Mark difficult"
+        disabled={loading}
+        onclick={handleDifficult}>難易度を下げる</Button
+      >
     </header>
     <p
       class="interaction-help text-[0.7rem] text-gray-600 mt-3 text-center shrink-0"
@@ -1273,13 +1270,6 @@
     <div class="mt-4 text-center text-sm text-primary/200 shrink-0">
       Rate: {rateDisplay}
     </div>
-    <div class="actions flex items-center gap-2 shrink-0">
-      <Button
-        type="button"
-        aria-label="Mark difficult"
-        disabled={loading}
-        onclick={handleDifficult}>難易度を下げる</Button
-      >
-    </div>
+    <div class="actions flex items-center gap-2 shrink-0"></div>
   </div>
 </main>
