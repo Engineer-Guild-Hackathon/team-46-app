@@ -62,8 +62,6 @@
   let pageCount = 0;
 
   // Telemetry counters
-  let sentenceClickCountForRequest = 0;
-  let wordClickCountForRequest = 0;
   let lastLoadCompletedAt: number | null = null;
   let firstLoad = true;
 
@@ -192,10 +190,6 @@
       // Include telemetry counts after the first successful load; omit on first
       const apiRes = await getTextPage({
         ...apiParams,
-        sentenceClickCount: firstLoad
-          ? undefined
-          : sentenceClickCountForRequest,
-        rate: userRate ?? undefined,
       });
       res = apiRes;
       if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
@@ -281,9 +275,6 @@
       // Important: render the reader content now so measurement can find it
       loading = false;
 
-      // Reset counters for the next request (we've just reported them)
-      sentenceClickCountForRequest = 0;
-      wordClickCountForRequest = 0;
       if (firstLoad) firstLoad = false;
     } catch (_e: unknown) {
       const e = _e as Error | undefined;
@@ -367,7 +358,6 @@
     // select
     selected.add(i);
     selected = new Set(selected);
-    sentenceClickCountForRequest++;
     // Fire sentence translation open log (first time only)
     {
       const s = sentences[i];
@@ -453,7 +443,6 @@
     set.add(idx);
     wordTooltipWordIndex[i] = idx;
     reassignWordHighlights();
-    wordClickCountForRequest++;
     _lastWordSelectionAt = Date.now();
     try {
       const sentence = sentences[i];
