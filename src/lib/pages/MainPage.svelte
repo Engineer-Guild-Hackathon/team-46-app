@@ -140,9 +140,7 @@
   onDestroy(() => window.removeEventListener("hashchange", updateFromHash));
 </script>
 
-<header
-  class="sticky top-0 z-20 bg-transparent backdrop-blur-lg border-b border-gray-200"
->
+<header class="sticky top-0 z-20 bg-transparent backdrop-blur-lg border-0">
   <div
     class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between"
   >
@@ -157,7 +155,7 @@
   </div>
 </header>
 
-<main class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<main class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
   {#if selectedView === "browse"}
     <Browse />
   {:else if selectedView === "stats"}

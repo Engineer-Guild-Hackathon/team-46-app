@@ -140,7 +140,7 @@
 <section
   class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
 >
-  {#if books.length === 0 && loading}
+  {#if loading}
     {#each skeletonIndices as i}
       <div class="rounded-lg bg-white shadow-sm overflow-hidden animate-pulse">
         <div class="aspect-[2/3] bg-gray-200"></div>
@@ -163,15 +163,5 @@
         <BookCard book={b} onOpen={openBook} />
       </div>
     {/each}
-    {#if loading}
-      <div class="rounded-lg bg-white shadow-sm overflow-hidden animate-pulse">
-        <div class="aspect-[2/3] bg-gray-200"></div>
-        <div class="p-4">
-          <div class="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
-          <div class="h-3 bg-gray-200 rounded w-1/2"></div>
-        </div>
-      </div>
-    {/if}
   {/if}
 </section>
-<!-- No infinite scroll. Initial + explicit search only. -->
