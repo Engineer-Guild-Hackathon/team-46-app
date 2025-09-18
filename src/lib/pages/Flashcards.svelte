@@ -113,16 +113,19 @@
 </script>
 
 <section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
-  <h2 class="pl-2 text-xl font-semibold text-neutral-700 dark:text-neutral-300">
+  <h2
+    class="pl-2 text-xl font-semibold text-neutral-700 dark:text-neutral-300 col-span-full"
+  >
     Word Flashcards
   </h2>
-  <!-- Stats + Categories -->
-  <Card>
+
+  <!-- Study Overview - 1/3 on md -->
+  <Card class="md:col-span-1">
     <CardHeader>
       <CardTitle>Study overview</CardTitle>
     </CardHeader>
     <CardContent class="text-sm text-muted-foreground">
-      <div class="flex items-center justify-between flex-wrap gap-4">
+      <div class="space-y-4">
         <div>
           <span>Due: {queue.length}</span>
           <span class="mx-2">•</span>
@@ -130,11 +133,11 @@
           <span class="mx-2">•</span>
           <span>New: {s.new}</span>
         </div>
-        <div class="flex items-center gap-6">
+        <div class="flex flex-col items-center gap-4">
           <div class="size-28">
             <canvas bind:this={pieEl} aria-label="Progress pie chart"></canvas>
           </div>
-          <div class="grid grid-cols-1 gap-2 text-foreground">
+          <div class="grid grid-cols-1 gap-2 text-foreground text-xs">
             <div class="flex items-center gap-2">
               <span
                 class="inline-block size-3 rounded-full"
@@ -169,8 +172,8 @@
     </CardContent>
   </Card>
 
-  <!-- Flashcard Card -->
-  <Card>
+  <!-- Flashcard - 2/3 on md -->
+  <Card class="md:col-span-2">
     <CardHeader>
       <CardTitle>Flashcards</CardTitle>
     </CardHeader>
@@ -189,11 +192,17 @@
         type="button"
       >
         {#if current}
-          {#if showBack}
-            {current.back}
-          {:else}
-            {current.front}
-          {/if}
+          <div
+            class="w-full max-h-32 overflow-auto break-words whitespace-normal"
+          >
+            {#if showBack}
+              {current.back}
+            {:else}
+              {current.front}
+            {/if}
+          </div>
+        {:else if s.total === 0}
+          No cards.
         {:else if s.total === 0}
           No cards.
         {:else}
@@ -230,48 +239,50 @@
     </CardContent>
   </Card>
 
-  <!-- Collapsible full list -->
-  <div
-    class="max-w-3xl mx-auto bg-card text-card-foreground flex flex-col gap-6 rounded-xl border p-6 shadow-sm w-full"
-  >
+  <!-- All Words - Full width -->
+  <Card class="md:col-span-3">
     <CollapsibleRoot bind:open={collapsibleOpen}>
-      <div class="flex items-center justify-between">
-        <h2 class="font-semibold">All words</h2>
-        <CollapsibleTrigger class="underline text-sm">
-          {#if collapsibleOpen}
-            Hide
-          {:else}
-            Show
-          {/if}
-        </CollapsibleTrigger>
-      </div>
-      <CollapsibleContent>
-        <Table.Root>
-          <Table.Header>
-            <Table.Row>
-              <Table.Head>Word</Table.Head>
-              <Table.Head>Definition</Table.Head>
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {#if deck.cards.length === 0}
-              <Table.Row>
-                <Table.Cell colspan="6" class="text-muted-foreground">
-                  No cards saved yet.
-                </Table.Cell>
-              </Table.Row>
+      <CardHeader>
+        <div class="flex items-center justify-between">
+          <CardTitle>All words</CardTitle>
+          <CollapsibleTrigger class="underline text-sm">
+            {#if collapsibleOpen}
+              Hide
             {:else}
-              {#each deck.cards as c}
-                <Table.Row>
-                  <Table.Cell class="font-medium">{c.front}</Table.Cell>
-                  <Table.Cell>{c.back || "—"}</Table.Cell>
-                </Table.Row>
-              {/each}
+              Show
             {/if}
-          </Table.Body>
-        </Table.Root>
+          </CollapsibleTrigger>
+        </div>
+      </CardHeader>
+      <CollapsibleContent>
+        <CardContent>
+          <Table.Root>
+            <Table.Header>
+              <Table.Row>
+                <Table.Head>Word</Table.Head>
+                <Table.Head>Definition</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#if deck.cards.length === 0}
+                <Table.Row>
+                  <Table.Cell colspan="2" class="text-muted-foreground">
+                    No cards saved yet.
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
+                {#each deck.cards as c}
+                  <Table.Row>
+                    <Table.Cell class="font-medium">{c.front}</Table.Cell>
+                    <Table.Cell>{c.back || "—"}</Table.Cell>
+                  </Table.Row>
+                {/each}
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </CardContent>
       </CollapsibleContent>
     </CollapsibleRoot>
-  </div>
+  </Card>
   <div class="h-12"></div>
 </section>
