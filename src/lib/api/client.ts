@@ -67,7 +67,7 @@ export async function getJson<T>(
   // Enforce per-URL throttle separate from the request timeout
   await enforceMinInterval(fullUrl, minInterval, options.signal);
 
-  let lastErr: any;
+  let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ac = new AbortController();
     const timers: number[] = [];
@@ -102,9 +102,10 @@ export async function getJson<T>(
         throw err;
       }
       return (await res.json()) as T;
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Propagate timeout/abort as a clean message
-      if (e?.name === "AbortError") {
+      const name = getErrorName(e);
+      if (name === "AbortError") {
         lastErr = new Error(
           `Request aborted (timeout ${timeoutMs}ms) for ${fullUrl}`,
         );
@@ -121,7 +122,13 @@ export async function getJson<T>(
     // If we reached here and didn't continue, break
     if (attempt === retries) break;
   }
-  throw lastErr ?? new Error(`Unknown error fetching ${fullUrl}`);
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(
+        typeof lastErr === "string"
+          ? lastErr
+          : `Unknown error fetching ${fullUrl}`,
+      );
 }
 
 async function safeText(res: Response): Promise<string> {
@@ -141,9 +148,11 @@ export const endpoints = {
 function composeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
   if (!b) return a;
   // If AbortSignal.any exists, use it
-  const anyFn = (AbortSignal as any).any as
-    | ((signals: AbortSignal[]) => AbortSignal)
-    | undefined;
+  const anyFn = (
+    AbortSignal as unknown as {
+      any?: (signals: AbortSignal[]) => AbortSignal;
+    }
+  ).any;
   if (typeof anyFn === "function") return anyFn([a, b]);
   const ac = new AbortController();
   function onAbortFromA() {
@@ -164,9 +173,11 @@ function composeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
 function isRetryableStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status < 600);
 }
-function isNetworkLikeError(e: any): boolean {
+function isNetworkLikeError(e: unknown): boolean {
   // fetch throws TypeError on network failures in many environments
-  return e && (e.name === "TypeError" || e.message?.includes("NetworkError"));
+  if (e instanceof TypeError) return true;
+  const msg = getErrorMessage(e);
+  return typeof msg === "string" && msg.includes("NetworkError");
 }
 async function backoffWait(
   base: number,
@@ -177,6 +188,25 @@ async function backoffWait(
   const jitter = Math.floor(Math.random() * 100);
   const ms = base * Math.pow(2, attempt) + jitter;
   await sleep(ms, signal);
+}
+
+// Type-safe helpers for unknown errors
+function getErrorName(err: unknown): string | undefined {
+  if (err instanceof DOMException) return err.name;
+  if (typeof err === "object" && err !== null && "name" in err) {
+    const n = (err as { name?: unknown }).name;
+    return typeof n === "string" ? n : undefined;
+  }
+  return undefined;
+}
+
+function getErrorMessage(err: unknown): string | undefined {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const m = (err as { message?: unknown }).message;
+    return typeof m === "string" ? m : undefined;
+  }
+  return undefined;
 }
 
 // Global per-URL throttle map

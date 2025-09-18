@@ -17,12 +17,10 @@
   let sortValue = $state("recommended");
   // Last submitted search term (used for fetching)
   let query = $state("");
-  // Guard to avoid redundant refreshes (non-reactive)
-  let lastKey = "";
 
   const pageSize = 12;
   let books: Book[] = $state([]);
-  let hasMore = $state(false);
+  // no infinite scroll
   let loading = $state(false);
   let error: string | null = $state(null);
   const skeletonCount = pageSize;
@@ -45,7 +43,7 @@
         author: it.author,
         coverUrl: it.thumbnail,
       }));
-      hasMore = page.hasMore;
+      // ignoring hasMore since infinite scroll is disabled
     } catch (e: any) {
       error = e?.message || "Failed to load books";
     } finally {
@@ -141,7 +139,7 @@
   class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
 >
   {#if loading}
-    {#each skeletonIndices as i}
+    {#each skeletonIndices as _}
       <div class="rounded-lg bg-white shadow-sm overflow-hidden animate-pulse">
         <div class="aspect-[2/3] bg-gray-200"></div>
         <div class="p-4">
