@@ -1094,12 +1094,12 @@
   }
 </script>
 
-<main class="bookpage fixed inset-0 overflow-hidden overscroll-none box-border">
+<main class="bookpage flex flex-col h-screen">
   <div
-    class="w-full max-w-[800px] mx-auto h-full py-8 px-4 box-border flex flex-col"
+    class="w-full max-w-[800px] mx-auto h-full min-h-0 py-8 px-4 box-border flex flex-col"
   >
     <header
-      class="topbar grid grid-cols-[auto_1fr_auto] items-center gap-2 mb-3"
+      class="topbar grid grid-cols-[auto_1fr_auto] items-center gap-2 mb-3 shrink-0"
     >
       <Button
         class="btn btn-ghost backBtn"
@@ -1123,14 +1123,14 @@
       </div>
     </header>
     <p
-      class="interaction-help text-[0.7rem] text-gray-600 mt-3 text-center"
+      class="interaction-help text-[0.7rem] text-gray-600 mt-3 text-center shrink-0"
       aria-label="Usage help"
     >
       クリックで単語表示、長押しで文章の意味を表示
     </p>
 
     {#if loading}
-      <section class="book-text mt-2">
+      <section class="book-text mt-2 flex-1 min-h-0">
         <ul class="sentences" aria-live="polite">
           {#each Array(6) as _, _i}
             <li class="sentence skeleton space-y-2">
@@ -1147,9 +1147,9 @@
     {:else if error}
       <p class="error">{error}</p>
     {:else}
-      <section class="book-text mt-2">
+      <section class="book-text mt-2 flex-1 min-h-0">
         <article
-          class="reader font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-card/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm max-h-[75vh] overflow-scroll break-words"
+          class="reader font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-card/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm overflow-auto break-words h-full"
           aria-live="polite"
           bind:this={readerEl}
         >
@@ -1239,10 +1239,10 @@
       </section>
     {/if}
 
-    <div class="mt-4 text-center text-sm text-slate-600">
+    <div class="mt-4 text-center text-sm text-primary/200 shrink-0">
       Rate: {rateDisplay}
     </div>
-    <div class="actions flex items-center gap-2">
+    <div class="actions flex items-center gap-2 shrink-0">
       <Button
         type="button"
         aria-label="Mark difficult"

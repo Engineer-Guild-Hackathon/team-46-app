@@ -2,7 +2,6 @@
   import "./app.css";
   import MainPage from "./lib/pages/MainPage.svelte";
   import BookPage from "./lib/pages/BookPage.svelte";
-  // Username modal removed; userId is generated automatically
   import "$lib/stores/user";
 
   let route: "main" | "book" = "main";
@@ -22,8 +21,6 @@
 
   parseHash();
   window.addEventListener("hashchange", parseHash);
-
-  // No user modal; user store initializes userId automatically
 </script>
 
 {#if route === "main"}
