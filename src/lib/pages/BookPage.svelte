@@ -32,6 +32,7 @@
     logOpenWord,
   } from "$lib/api/logging";
   import SentenceInline from "$lib/pages/components/SentenceInline.svelte";
+  import { recordWordsRead as persistWordsRead } from "$lib/pages/readingStats";
 
   export let bookId: string;
 
@@ -226,6 +227,18 @@
         lastEnd = res.endSentenceNo;
         // backend provided content -> allow loading next
         canNext = true;
+
+        // Estimate words read and persist to local stats (Mon-Sun week)
+        try {
+          const words = newSentences.reduce((acc, s) => {
+            const text = s?.en ?? "";
+            const matches = text.match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g);
+            return acc + (matches ? matches.length : 0);
+          }, 0);
+          if (words > 0) persistWordsRead(words);
+        } catch {
+          /* ignore stats errors */
+        }
       }
       // Important: render the reader content now so measurement can find it
       loading = false;

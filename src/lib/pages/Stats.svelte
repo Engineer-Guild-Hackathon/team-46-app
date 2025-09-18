@@ -12,6 +12,15 @@
   import * as Collapsible from "$lib/components/ui/collapsible/index.js";
   let ratingOpen = false;
 
+  // Use reusable reading stats util
+  import {
+    loadStats,
+    saveStats,
+    recordWordsRead,
+    WEEK_LABELS,
+    type ReadingStats,
+  } from "./readingStats";
+
   // Simple derived rating: demo placeholder until backed by real data
   // Rating scale: 0..5 (half-steps supported); persisted elsewhere in future
   const rating = derived(user, ($u) => {
@@ -20,29 +29,29 @@
     return Math.max(0, Math.min(5, len % 6));
   });
 
-  // Demo stats
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const datasets = [
+  // Labels and reactive datasets from persisted stats
+  const labels = WEEK_LABELS;
+
+  // Reactive state for stats
+  let stats = $state(loadStats());
+  $effect(() => saveStats(stats));
+
+  // Reactive derived metrics (Svelte 5 runes)
+  // Clone to avoid passing a $state-backed array to Chart.js (which mutates it)
+  const weeklyData = $derived([...stats.daily]);
+  const datasets = $derived([
     {
       label: "Words Read",
-      data: [500, 800, 650, 900, 1200, 300, 0],
+      data: [...weeklyData],
       backgroundColor: "rgba(44, 24, 16, 0.6)",
       borderColor: "#2C1810",
       borderWidth: 1,
     },
-  ];
-
-  // Compute current daily streak from weekly data (consecutive non-zero from end)
-  const weeklyData = datasets[0].data;
-  function calcCurrentStreak(data: number[]): number {
-    let s = 0;
-    for (let i = data.length - 1; i >= 0; i--) {
-      if (data[i] > 0) s++;
-      else break;
-    }
-    return s;
-  }
-  const currentStreak = calcCurrentStreak(weeklyData);
+  ]);
+  const totalThisWeek = $derived(weeklyData.reduce((a, b) => a + b, 0));
+  const avgDaily = $derived(Math.round(totalThisWeek / 7));
+  const currentStreak = $derived(stats.currentStreak);
+  const longestStreak = $derived(stats.longestStreak);
 </script>
 
 <section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -82,9 +91,13 @@
     </CardHeader>
     <CardContent>
       <ul class="text-sm space-y-2">
-        <li>Total Words This Week: <strong>4,350</strong></li>
-        <li>Avg. Daily: <strong>621</strong></li>
-        <li>Longest Streak: <strong>6 days</strong></li>
+        <li>Total Words This Week: <strong>{totalThisWeek}</strong></li>
+        <li>Avg. Daily: <strong>{avgDaily}</strong></li>
+        <li>
+          Longest Streak: <strong
+            >{longestStreak} day{longestStreak === 1 ? "" : "s"}</strong
+          >
+        </li>
       </ul>
     </CardContent>
   </Card>
