@@ -108,7 +108,8 @@ if (!(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver) {
 // Polyfill window.matchMedia for components relying on media queries in jsdom
 if (
   typeof window !== "undefined" &&
-  typeof (window as unknown as { matchMedia?: unknown }).matchMedia !== "function"
+  typeof (window as unknown as { matchMedia?: unknown }).matchMedia !==
+    "function"
 ) {
   window.matchMedia = (query: string) => {
     const mql: MediaQueryList = {

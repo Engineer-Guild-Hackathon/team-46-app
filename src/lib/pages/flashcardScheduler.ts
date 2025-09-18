@@ -199,7 +199,10 @@ const STORAGE_KEY = "flashcards-state-v1";
 
 export function saveState(deck: DeckState) {
   if (typeof localStorage === "undefined") return;
-  const minimal: Record<string, ReviewState> = {} as Record<string, ReviewState>;
+  const minimal: Record<string, ReviewState> = {} as Record<
+    string,
+    ReviewState
+  >;
   for (const c of deck.cards) {
     const {
       id,

@@ -12,11 +12,7 @@
   // Collapsible available if needed in future
 
   // Use reusable reading stats util
-  import {
-    loadStats,
-    saveStats,
-    WEEK_LABELS,
-  } from "./readingStats";
+  import { loadStats, saveStats, WEEK_LABELS } from "./readingStats";
 
   // Simple derived rating: demo placeholder until backed by real data
   // Rating scale: 0..5 (half-steps supported); persisted elsewhere in future

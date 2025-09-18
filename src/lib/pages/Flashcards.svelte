@@ -18,7 +18,7 @@
     loadState,
     saveState,
     stats as deckStats,
-  categorize,
+    categorize,
     type CardItem as FCItem,
     type DeckState,
     type Grade,

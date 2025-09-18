@@ -172,8 +172,9 @@
       // Include telemetry counts after the first successful load; omit on first
       const apiRes = await getTextPage({
         ...apiParams,
-        wordClickCount: firstLoad ? undefined : wordClickCountForRequest,
-        sentenceClickCount: firstLoad ? undefined : sentenceClickCountForRequest,
+        sentenceClickCount: firstLoad
+          ? undefined
+          : sentenceClickCountForRequest,
         rate: userRate ?? undefined,
       });
       res = apiRes;
