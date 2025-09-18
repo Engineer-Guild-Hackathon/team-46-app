@@ -178,19 +178,25 @@
       <Button
         size="sm"
         variant="ghost"
-        class={selectedView === "browse" ? "selected" : ""}
+        class={selectedView === "browse"
+          ? "bg-accent-foreground rounded-xl"
+          : ""}
         on:click={() => (location.hash = "#/")}>Browse</Button
       >
       <Button
         size="sm"
         variant="ghost"
-        class={selectedView === "stats" ? "selected" : ""}
+        class={selectedView === "stats"
+          ? "bg-accent-foreground rounded-xl"
+          : ""}
         on:click={() => (location.hash = "#/stats")}>Stats</Button
       >
       <Button
         size="sm"
         variant="ghost"
-        class={selectedView === "flashcards" ? "selected" : ""}
+        class={selectedView === "flashcards"
+          ? "bg-accent-foreground rounded-xl"
+          : ""}
         on:click={() => (location.hash = "#/flashcards")}>Flashcards</Button
       >
     </div>
