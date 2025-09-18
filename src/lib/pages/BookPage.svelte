@@ -723,22 +723,39 @@
         loading = false;
         // after DOM updates, scroll to top of last page so user resumes there
         await tick();
-        // Prefer restoring by top-visible sentence index; fall back to
-        // previous 'last page start' jump when no saved index exists.
+        // Prefer restoring by exact top-visible sentence and its offset; fall back to
+        // previous 'last page start' jump when no saved position exists.
         let restored = false;
         try {
           const raw = localStorage.getItem(topSentenceStorageKey(bookId));
           if (raw != null) {
-            const savedSentenceNo = Number(raw);
-            if (!Number.isNaN(savedSentenceNo) && readerEl) {
+            // Support both legacy (number) and new JSON format { sentenceNo, offset }
+            let savedSentenceNo: number | null = null;
+            let savedOffset = 0;
+            try {
+              if (raw.trim().startsWith("{")) {
+                const obj = JSON.parse(raw);
+                if (typeof obj?.sentenceNo === "number")
+                  savedSentenceNo = obj.sentenceNo;
+                if (typeof obj?.offset === "number")
+                  savedOffset = Math.max(0, Math.round(obj.offset));
+              } else {
+                const num = Number(raw);
+                if (!Number.isNaN(num)) savedSentenceNo = num;
+                // legacy value had an implicit small padding; consider it 0 offset now
+                savedOffset = 0;
+              }
+            } catch {
+              const num = Number(raw);
+              if (!Number.isNaN(num)) savedSentenceNo = num;
+            }
+            if (savedSentenceNo != null && readerEl) {
               // find the current index of the saved sentence number
               const foundIdx = sentences.findIndex(
                 (s) => (s.sentenceNo ?? -1) === savedSentenceNo,
               );
               if (foundIdx >= 0) {
-                // show the previous sentence so the reader can re-read a bit
-                const displayIdx = Math.max(0, foundIdx - 1);
-                const el = elRefs[displayIdx];
+                const el = elRefs[foundIdx];
                 if (el) {
                   // Temporarily disconnect observer to avoid triggering loads while we programmatically scroll
                   try {
@@ -748,14 +765,12 @@
                   }
                   _suppressAutoLoad = true;
                   _lastScrollTriggerAt = Date.now();
-                  // compute delta between element top and container top and adjust scrollTop
+                  // compute delta between element top and container top and adjust scrollTop to restore exact offset
                   const containerRect = readerEl.getBoundingClientRect();
                   const elRect = el.getBoundingClientRect();
-                  // Align the sentence top to the reader top with a small padding
-                  const paddingTop = 8; // show the sentence from near the top
                   const targetScrollTop =
                     readerEl.scrollTop +
-                    Math.round(elRect.top - containerRect.top - paddingTop);
+                    Math.round(elRect.top - containerRect.top - savedOffset);
                   readerEl.scrollTop = targetScrollTop;
                   window.setTimeout(() => {
                     _suppressAutoLoad = false;
@@ -830,7 +845,7 @@
       readerEl.addEventListener("scroll", updateScrollProgressDebounced, {
         passive: true,
       });
-      // persist top-visible sentence index (debounced)
+      // persist top-visible sentence index and offset (debounced)
       const saveTopSentenceDebounced = () => {
         if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
         _scrollSaveTimer = window.setTimeout(() => {
@@ -839,9 +854,25 @@
             if (idx != null) {
               const s = sentences[idx];
               if (s && s.sentenceNo != null) {
+                // compute current offset of this sentence from top of reader
+                let offset = 0;
+                try {
+                  const el = elRefs[idx];
+                  if (el && readerEl) {
+                    const containerRect = readerEl.getBoundingClientRect();
+                    const elRect = el.getBoundingClientRect();
+                    offset = Math.max(
+                      0,
+                      Math.round(elRect.top - containerRect.top),
+                    );
+                  }
+                } catch {
+                  /* ignore offset calc */
+                }
+                const payload = { sentenceNo: s.sentenceNo, offset };
                 localStorage.setItem(
                   topSentenceStorageKey(bookId),
-                  String(s.sentenceNo),
+                  JSON.stringify(payload),
                 );
               }
             }
