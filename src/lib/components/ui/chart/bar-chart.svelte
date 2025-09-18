@@ -12,11 +12,9 @@
     borderWidth?: number;
     barThickness?: number | "flex";
   }> = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export let options: any = {};
 
   let canvas: HTMLCanvasElement | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let chart: any;
 
   onMount(async () => {

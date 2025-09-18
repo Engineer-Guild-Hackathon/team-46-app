@@ -40,9 +40,9 @@ export async function getTextPage(
     charCount = 800,
     difficultBtn,
     time,
-  wordClickCount,
-  sentenceClickCount,
-  rate,
+    wordClickCount,
+    sentenceClickCount,
+    rate,
   } = params;
 
   // The backend expects these as query params. We forward them as-is.
@@ -53,8 +53,8 @@ export async function getTextPage(
     charCount,
     difficultBtn,
     time,
-  wordClickCount,
-  sentenceClickCount,
-  rate,
+    wordClickCount,
+    sentenceClickCount,
+    rate,
   });
 }

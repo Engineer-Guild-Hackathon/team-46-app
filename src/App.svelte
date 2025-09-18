@@ -20,7 +20,8 @@
     if (_once) return;
     _once = true;
     try {
-      const existing = typeof localStorage !== "undefined" && localStorage.getItem("userId");
+      const existing =
+        typeof localStorage !== "undefined" && localStorage.getItem("userId");
       if (v?.userId) {
         if (!existing && typeof localStorage !== "undefined") {
           localStorage.setItem("userId", v.userId);
@@ -28,7 +29,8 @@
         return;
       }
       const newId = genUUID();
-      if (typeof localStorage !== "undefined") localStorage.setItem("userId", newId);
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem("userId", newId);
       user.set({ userId: newId, username: null });
     } catch {
       /* ignore */

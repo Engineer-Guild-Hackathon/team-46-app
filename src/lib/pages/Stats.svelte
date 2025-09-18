@@ -5,26 +5,22 @@
     CardTitle,
     CardContent,
   } from "$lib/components/ui/card";
-  import { BarChart, LineChart } from "$lib/components/ui/chart";
+  import { BarChart } from "$lib/components/ui/chart";
   import { user } from "$lib/stores/user";
   import { derived } from "svelte/store";
   import { Flame } from "@lucide/svelte";
-  import * as Collapsible from "$lib/components/ui/collapsible/index.js";
-  let ratingOpen = false;
+  // Collapsible available if needed in future
 
   // Use reusable reading stats util
   import {
     loadStats,
     saveStats,
-    recordWordsRead,
     WEEK_LABELS,
-    type ReadingStats,
   } from "./readingStats";
 
   // Simple derived rating: demo placeholder until backed by real data
   // Rating scale: 0..5 (half-steps supported); persisted elsewhere in future
-  const rating = derived(user, ($u) => {
-    // naive deterministic demo rating based on username length
+  const _rating = derived(user, ($u) => {
     const len = $u.username?.length ?? 0;
     return Math.max(0, Math.min(5, len % 6));
   });

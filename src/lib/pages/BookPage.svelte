@@ -169,7 +169,13 @@
       console.debug("[BookPage] getTextPage params ->", apiParams);
 
       // Request real text page from backend
-      const apiRes = await getTextPage(apiParams);
+      // Include telemetry counts after the first successful load; omit on first
+      const apiRes = await getTextPage({
+        ...apiParams,
+        wordClickCount: firstLoad ? undefined : wordClickCountForRequest,
+        sentenceClickCount: firstLoad ? undefined : sentenceClickCountForRequest,
+        rate: userRate ?? undefined,
+      });
       res = apiRes;
       if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
         userRate = apiRes.rate;

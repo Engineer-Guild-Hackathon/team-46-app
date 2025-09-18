@@ -1,13 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  buildDeck,
-  gradeCard,
-  initState,
-  now,
-  minutes,
-  days,
-  type CardItem,
-} from "../../src/lib/pages/flashcardScheduler";
+import { gradeCard, initState, minutes, type CardItem } from "../../src/lib/pages/flashcardScheduler";
 
 const fixedNow = 1_700_000_000_000; // fixed timestamp for deterministic tests
 

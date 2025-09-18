@@ -86,7 +86,7 @@ export function renderSentenceHTML(
     if (last < seg.text.length) {
       const rest = esc(seg.text.slice(last));
       if (rest)
-        out.push(seg.italic ? `<span class=\"italic\">${rest}</span>` : rest);
+        out.push(seg.italic ? `<span class="italic">${rest}</span>` : rest);
     }
   }
   return out.join("");

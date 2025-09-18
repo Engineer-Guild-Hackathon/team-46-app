@@ -62,7 +62,6 @@ export function gradeCard(
   let lapses = state.lapses;
 
   const wasNew = repetitions === 0 && interval === 0;
-  const wasRelearning = repetitions > 0 && q <= 2;
 
   if (q <= 2) {
     // Again (fail): reset reps, reduce ease, short relearn interval
@@ -200,7 +199,7 @@ const STORAGE_KEY = "flashcards-state-v1";
 
 export function saveState(deck: DeckState) {
   if (typeof localStorage === "undefined") return;
-  const minimal: Record<string, ReviewState> = {} as any;
+  const minimal: Record<string, ReviewState> = {} as Record<string, ReviewState>;
   for (const c of deck.cards) {
     const {
       id,
