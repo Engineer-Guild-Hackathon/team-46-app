@@ -33,6 +33,7 @@
   } from "$lib/api/logging";
   import SentenceInline from "$lib/pages/components/SentenceInline.svelte";
   import { recordWordsRead as persistWordsRead } from "$lib/pages/readingStats";
+  import { addCardIfMissing } from "$lib/pages/flashcardsStore";
 
   export let bookId: string;
 
@@ -410,6 +411,17 @@
         );
       } catch {
         /* ignore */
+      }
+      // Also add to flashcards storage (word front, sentence as back)
+      try {
+        const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
+        addCardIfMissing({
+          id: wordValue.toLowerCase(),
+          front: wordValue,
+          back: def,
+        });
+      } catch {
+        /* ignore card add */
       }
     } catch {
       /* ignore word log */

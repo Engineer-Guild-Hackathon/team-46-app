@@ -25,24 +25,16 @@
     type Grade,
     type ScheduledCard,
   } from "./flashcardScheduler";
+  import { loadCards } from "./flashcardsStore";
   import * as Table from "$lib/components/ui/table/index.js";
   import { onMount, onDestroy } from "svelte";
   import Chart from "chart.js/auto";
 
   let collapsibleOpen = $state(false);
 
-  // Seed data; replace with real words later
-  const seed: FCItem[] = [
-    {
-      id: "ubiquitous",
-      front: "ubiquitous",
-      back: "present, appearing, or found everywhere",
-    },
-    { id: "laconic", front: "laconic", back: "using very few words" },
-    { id: "aplomb", front: "aplomb", back: "self-confidence or assurance" },
-  ];
-
-  let deck: DeckState = buildDeck(seed, loadState());
+  // Load cards from localStorage
+  const initialCards: FCItem[] = loadCards();
+  let deck: DeckState = buildDeck(initialCards, loadState());
   let queue = $state<ScheduledCard[]>([]);
   let current = $state<ScheduledCard | undefined>(undefined);
   let showBack = $state(false);
@@ -186,7 +178,7 @@
     <CardContent>
       <Button
         class="border rounded-xl p-8 text-center min-h-40 w-full flex items-center justify-center text-xl mt-2 select-none cursor-pointer"
-        on:click={flip}
+        onclick={flip}
         on:keydown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
@@ -210,16 +202,16 @@
       </Button>
 
       <div class="mt-4 flex flex-wrap items-center gap-3 justify-center">
-        <Button class="border" on:click={() => grade(1)} aria-label="Again (1)"
+        <Button class="border" onclick={() => grade(1)} aria-label="Again (1)"
           >Again</Button
         >
-        <Button class="border" on:click={() => grade(3)} aria-label="Hard (3)"
+        <Button class="border" onclick={() => grade(3)} aria-label="Hard (3)"
           >Hard</Button
         >
-        <Button class="border" on:click={() => grade(4)} aria-label="Good (4)"
+        <Button class="border" onclick={() => grade(4)} aria-label="Good (4)"
           >Good</Button
         >
-        <Button class="border" on:click={() => grade(5)} aria-label="Easy (5)"
+        <Button class="border" onclick={() => grade(5)} aria-label="Easy (5)"
           >Easy</Button
         >
       </div>
@@ -246,14 +238,24 @@
           <Table.Header>
             <Table.Row>
               <Table.Head>Word</Table.Head>
-              <Table.Head>JP</Table.Head>
+              <Table.Head>Definition</Table.Head>
             </Table.Row>
           </Table.Header>
           <Table.Body>
-            <Table.Row>
-              <Table.Cell>daisy-chain</Table.Cell>
-              <Table.Cell>雛菊の花冠</Table.Cell>
-            </Table.Row>
+            {#if deck.cards.length === 0}
+              <Table.Row>
+                <Table.Cell colspan="6" class="text-muted-foreground">
+                  No cards saved yet.
+                </Table.Cell>
+              </Table.Row>
+            {:else}
+              {#each deck.cards as c}
+                <Table.Row>
+                  <Table.Cell class="font-medium">{c.front}</Table.Cell>
+                  <Table.Cell>{c.back || "—"}</Table.Cell>
+                </Table.Row>
+              {/each}
+            {/if}
           </Table.Body>
         </Table.Root>
       </CollapsibleContent>
