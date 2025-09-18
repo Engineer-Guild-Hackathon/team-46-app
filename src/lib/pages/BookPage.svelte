@@ -299,7 +299,6 @@
     pages.push(sentences.slice(start));
     return pages;
   }
-
   // Helper: convert our in-memory Sentence to the persisted StoredSentence shape
   // We intentionally read persisted fields if present (mergeWithSavedSentences
   // will attach them), and default to sensible empties otherwise.
@@ -1284,16 +1283,16 @@
             <li class="flex items-center gap-2">
               <span class="inline-block size-1.5 rounded-full bg-primary/60"
               ></span>
+              <span>ダブルクリックで選択解除</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="inline-block size-1.5 rounded-full bg-primary/60"
+              ></span>
               {#if window.innerWidth > 640}
                 <span>長押し＋右クリックで文章の意味を表示</span>
               {:else}
                 <span>長押しで文章の意味を表示</span>
               {/if}
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="inline-block size-1.5 rounded-full bg-primary/60"
-              ></span>
-              <span>ダブルクリックで選択解除</span>
             </li>
           </ul>
         {/if}
