@@ -8,7 +8,14 @@ export interface TextItem {
   sentenceNo: number;
   en: string;
   jp: string;
+  en_word: string[];
   jp_word: string[];
+  // Optional phrase-level segmentation (new backend shape)
+  en_phrase?: string[];
+  jp_phrase?: string[];
+  word_difficulty: string[];
+  is_paragraph_start: boolean;
+  is_paragraph_end: boolean;
 }
 
 export interface GetTextPageParams {
