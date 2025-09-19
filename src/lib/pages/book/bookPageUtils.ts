@@ -133,9 +133,10 @@ export function renderSentenceHTML(
         const finalCls = isItalicPhrase ? `${cls} italic` : cls;
 
         if (isHighlighted && tooltipVisible && pi === tooltipWordIdx) {
+          console.debug("[Phrase] Showing tooltip", { pi, tooltipWordIdx, isHighlighted, tooltipVisible });
           const jp = s.jp_word?.[pi];
           const tip =
-            jp && jp.trim() !== "" ? esc(jp) : "Translation unavailable";
+            jp && jp.trim() !== "" ? esc(jp) : "翻訳が見つかりません";
           const tipCls =
             "word-tooltip absolute left-1/2 -translate-x-1/2 bottom-full mb-2 transform bg-slate-800 text-white text-xs leading-tight px-2 py-1 rounded shadow z-50 pointer-events-none whitespace-nowrap";
           out.push(
@@ -172,9 +173,21 @@ export function renderSentenceHTML(
         const cls = isHighlighted ? `${baseCls} ${highlightCls}` : baseCls;
         const finalCls = isItalicWord ? `${cls} italic` : cls;
 
-        out.push(
-          `<span class="${finalCls}" data-wi="${pi}">${esc(w.text)}</span>`,
-        );
+        if (isHighlighted && tooltipVisible && pi === tooltipWordIdx) {
+          console.debug("[Fallback] Showing tooltip", { pi, tooltipWordIdx, isHighlighted, tooltipVisible });
+          const jp = s.jp_word?.[pi];
+          const tip =
+            jp && jp.trim() !== "" ? esc(jp) : "翻訳が見つかりません";
+          const tipCls =
+            "word-tooltip absolute left-1/2 -translate-x-1/2 bottom-full mb-2 transform bg-slate-800 text-white text-xs leading-tight px-2 py-1 rounded shadow z-50 pointer-events-none whitespace-nowrap";
+          out.push(
+            `<span class="${finalCls}" data-wi="${pi}">${esc(w.text)}<span class="${tipCls}" aria-label="Japanese translation">${tip}</span></span>`,
+          );
+        } else {
+          out.push(
+            `<span class="${finalCls}" data-wi="${pi}">${esc(w.text)}</span>`,
+          );
+        }
         prevEnd = w.end;
         wi += 1;
         pi += 1; // advance phrase as well to keep indices roughly aligned
@@ -230,11 +243,12 @@ export function renderSentenceHTML(
         (isHighlighted ? `${baseCls} ${highlightCls}` : baseCls) +
         (seg.italic ? " italic" : "");
       if (isHighlighted && tooltipVisible && wi === tooltipWordIdx) {
+        console.debug("[Word] Showing tooltip", { wi, tooltipWordIdx, isHighlighted, tooltipVisible });
         const jpWord = s.jp_word?.[wi];
         const tip =
           jpWord && jpWord.trim() !== ""
             ? esc(jpWord)
-            : "Translation unavailable";
+            : "翻訳が見つかりません";
         const tipCls =
           "word-tooltip absolute left-1/2 -translate-x-1/2 bottom-full mb-2 transform bg-slate-800 text-white text-xs leading-tight px-2 py-1 rounded shadow z-50 pointer-events-none whitespace-nowrap";
         out.push(

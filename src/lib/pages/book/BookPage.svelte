@@ -253,17 +253,49 @@
         }
       }
 
-      // Map to local Sentence shape and merge any saved progress
-      const mapped = res.text.map((t) => ({
-        type: t.type,
-        en: t.en,
-        jp: t.jp,
-        jp_word: t.jp_word,
-        en_word: (t as any).en_word ?? (t as any).en_phrase,
-        word_difficulty: (t as any).word_difficulty,
-        level: String(t.sentenceNo),
-        sentenceNo: t.sentenceNo,
-      }));
+  /**
+   * Clean word arrays by removing standalone punctuation entries
+   * This fixes phrase alignment issues caused by punctuation being treated as separate words
+   */
+  function cleanWordArrays(enWords: string[], jpWords: string[]): { en_word: string[], jp_word: string[] } {
+    const cleanedEn: string[] = [];
+    const cleanedJp: string[] = [];
+    
+    for (let i = 0; i < enWords.length; i++) {
+      const enWord = enWords[i];
+      const jpWord = jpWords[i];
+      
+      // Skip standalone punctuation (single character that's not alphanumeric)
+      if (enWord && enWord.length === 1 && /^[^\w]$/.test(enWord)) {
+        continue;
+      }
+      
+      cleanedEn.push(enWord);
+      if (jpWord) {
+        cleanedJp.push(jpWord);
+      }
+    }
+    
+    return { en_word: cleanedEn, jp_word: cleanedJp };
+  }
+
+  // Map to local Sentence shape and merge any saved progress
+      const mapped = res.text.map((t) => {
+        const rawEnWord = (t as any).en_word ?? (t as any).en_phrase ?? [];
+        const rawJpWord = t.jp_word ?? [];
+        const cleaned = cleanWordArrays(rawEnWord, rawJpWord);
+        
+        return {
+          type: t.type,
+          en: t.en,
+          jp: t.jp,
+          jp_word: cleaned.jp_word,
+          en_word: cleaned.en_word,
+          word_difficulty: (t as any).word_difficulty,
+          level: String(t.sentenceNo),
+          sentenceNo: t.sentenceNo,
+        };
+      });
       const newSentences = mergeWithSavedSentences(
         bookId,
         mapped,
