@@ -78,6 +78,7 @@
   {:else}
     <Flashcards />
   {/if}
+  <div class="h-12"></div>
 </main>
 
 <!-- Footer navigation: Browse / Stats / Flashcards -->
@@ -113,18 +114,6 @@
     </div>
   </nav>
 </footer>
-
-<!-- Copyright Footer -->
-<div class="fixed bottom-0 left-0 right-0 pb-20 pointer-events-none z-0">
-  <div class="text-center text-xs text-gray-400 opacity-60">
-    <a 
-      href="#/copyrights" 
-      class="underline hover:text-gray-300 pointer-events-auto"
-    >
-      Copyright & Legal Information
-    </a>
-  </div>
-</div>
 
 <!-- Session Summary Modal -->
 <SessionSummaryModal

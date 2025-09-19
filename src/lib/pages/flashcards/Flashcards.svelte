@@ -308,5 +308,4 @@
       </CollapsibleContent>
     </CollapsibleRoot>
   </Card>
-  <div class="h-12"></div>
 </section>

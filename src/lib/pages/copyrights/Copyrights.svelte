@@ -17,7 +17,9 @@
   <div class="bg-white rounded-lg shadow-sm border p-6 space-y-6">
     <!-- Translation Copyright -->
     <section>
-      <h2 class="text-lg font-semibold text-gray-900 mb-3">Translation Rights</h2>
+      <h2 class="text-lg font-semibold text-gray-900 mb-3">
+        Translation Rights
+      </h2>
       <div class="text-sm text-gray-700 space-y-2">
         <div class="font-medium">(C) 1999 山形浩生</div>
         <p class="leading-relaxed">
@@ -25,10 +27,10 @@
         </p>
         <p>
           プロジェクト杉田玄白　正式参加作品。詳細は
-          <a 
-            href="http://www.genpaku.org/" 
-            class="text-blue-600 underline hover:text-blue-800" 
-            target="_blank" 
+          <a
+            href="http://www.genpaku.org/"
+            class="text-blue-600 underline hover:text-blue-800"
+            target="_blank"
             rel="noopener noreferrer"
           >
             http://www.genpaku.org/
@@ -44,8 +46,9 @@
       <div class="text-sm text-gray-700">
         <p>© 2025 FlexRead. Built for Engineer Guild Hackathon.</p>
         <p class="mt-2 text-gray-500">
-          This application provides a reading interface for public domain and 
-          freely available texts. All content rights belong to their respective owners.
+          This application provides a reading interface for public domain and
+          freely available texts. All content rights belong to their respective
+          owners.
         </p>
       </div>
     </section>
@@ -55,9 +58,9 @@
       <h2 class="text-lg font-semibold text-gray-900 mb-3">Disclaimer</h2>
       <div class="text-sm text-gray-600">
         <p>
-          This application is provided "as is" without warranty of any kind. 
-          The developers are not responsible for the content of external texts 
-          or translations accessed through this application.
+          This application is provided "as is" without warranty of any kind. The
+          developers are not responsible for the content of external texts or
+          translations accessed through this application.
         </p>
       </div>
     </section>

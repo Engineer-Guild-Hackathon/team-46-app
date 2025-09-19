@@ -158,3 +158,15 @@
     {/each}
   {/if}
 </section>
+
+<!-- Copyright Footer -->
+<div class="pointer-events-none z-0 pt-10">
+  <div class="text-center text-xs text-gray-400 opacity-60">
+    <a
+      href="#/copyrights"
+      class="underline hover:text-gray-300 pointer-events-auto"
+    >
+      Copyright & Legal Information
+    </a>
+  </div>
+</div>
