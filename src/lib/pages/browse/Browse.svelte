@@ -9,9 +9,9 @@
   let search = $state("");
 
   const sortOptions = [
-    { value: "recommended", label: "Recommended" },
-    { value: "popularity", label: "Popular" },
-    { value: "year", label: "Year Released" },
+    { value: "recommended", label: "おすすめ" },
+    { value: "popularity", label: "人気順" },
+    { value: "year", label: "発行年" },
   ];
 
   let sortValue = $state("recommended");
@@ -45,14 +45,14 @@
       }));
       // ignoring hasMore since infinite scroll is disabled
     } catch (e: any) {
-      error = e?.message || "Failed to load books";
+      error = e?.message || "本の読み込みに失敗しました";
     } finally {
       loading = false;
     }
   }
 
   const triggerContent = $derived(
-    sortOptions.find((s) => s.value === sortValue)?.label || "Sort by...",
+    sortOptions.find((s) => s.value === sortValue)?.label || "並び順...",
   );
 
   function backendSort(value: string): string | undefined {
@@ -99,8 +99,8 @@
       <button
         type="submit"
         class="m-2 p-0 border-0 bg-transparent cursor-pointer text-secondary-foreground inline-flex items-center justify-center"
-        aria-label="Search"
-        title="Search"
+        aria-label="検索"
+        title="検索"
         disabled={loading}
       >
         <Search class="w-5 h-5" />
@@ -108,7 +108,7 @@
       <Input
         class="flex-grow min-w-0 w-full sm:w-[320px] border-0 bg-transparent focus:ring-0 focus:ring-offset-0 focus:outline-none h-12"
         type="search"
-        placeholder="Search books..."
+        placeholder="本を検索..."
         bind:value={search}
         disabled={loading}
       />
@@ -119,7 +119,7 @@
       </Select.Trigger>
       <Select.Content>
         <Select.Group>
-          <Select.Label>Sort by...</Select.Label>
+          <Select.Label>並び順...</Select.Label>
           {#each sortOptions as option (option.value)}
             <Select.Item value={option.value} label={option.label}>
               {option.label}
@@ -150,7 +150,7 @@
     {/each}
   {:else if books.length === 0}
     <div class="col-span-full text-center text-gray-500 py-12">
-      No books found
+      本が見つかりませんでした
     </div>
   {:else}
     {#each books as b (b.id)}
@@ -166,7 +166,7 @@
       href="#/copyrights"
       class="underline hover:text-gray-300 pointer-events-auto"
     >
-      Copyright & Legal Information
+      著作権・法的情報
     </a>
   </div>
 </div>

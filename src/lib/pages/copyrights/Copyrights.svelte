@@ -8,18 +8,16 @@
       onclick={() => window.history.back()}
       class="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-4"
     >
-      ← Back
+      ← 戻る
     </button>
-    <h1 class="text-2xl font-bold text-gray-900 mb-2">Copyright Information</h1>
-    <p class="text-gray-600">Legal notices and attribution information</p>
+    <h1 class="text-2xl font-bold text-gray-900 mb-2">著作権情報</h1>
+    <p class="text-gray-600">法的通知および帰属情報</p>
   </div>
 
   <div class="bg-white rounded-lg shadow-sm border p-6 space-y-6">
     <!-- Translation Copyright -->
     <section>
-      <h2 class="text-lg font-semibold text-gray-900 mb-3">
-        Translation Rights
-      </h2>
+      <h2 class="text-lg font-semibold text-gray-900 mb-3">翻訳権</h2>
       <div class="text-sm text-gray-700 space-y-2">
         <div class="font-medium">(C) 1999 山形浩生</div>
         <p class="leading-relaxed">
@@ -42,25 +40,21 @@
 
     <!-- App Copyright -->
     <section>
-      <h2 class="text-lg font-semibold text-gray-900 mb-3">Application</h2>
+      <h2 class="text-lg font-semibold text-gray-900 mb-3">アプリケーション</h2>
       <div class="text-sm text-gray-700">
-        <p>© 2025 FlexRead. Built for Engineer Guild Hackathon.</p>
+        <p>© 2025 FlexRead. Engineer Guild Hackathon向けに開発。</p>
         <p class="mt-2 text-gray-500">
-          This application provides a reading interface for public domain and
-          freely available texts. All content rights belong to their respective
-          owners.
+          このアプリケーションは、パブリックドメインおよび自由に利用可能なテキストの読書インターフェースを提供します。すべてのコンテンツの権利は、それぞれの所有者に帰属します。
         </p>
       </div>
     </section>
 
     <!-- Additional Legal -->
     <section>
-      <h2 class="text-lg font-semibold text-gray-900 mb-3">Disclaimer</h2>
+      <h2 class="text-lg font-semibold text-gray-900 mb-3">免責事項</h2>
       <div class="text-sm text-gray-600">
         <p>
-          This application is provided "as is" without warranty of any kind. The
-          developers are not responsible for the content of external texts or
-          translations accessed through this application.
+          このアプリケーションは「現状のまま」提供され、いかなる種類の保証もありません。開発者は、このアプリケーションを通じてアクセスされる外部テキストや翻訳の内容について責任を負いません。
         </p>
       </div>
     </section>

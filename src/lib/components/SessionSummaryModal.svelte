@@ -61,7 +61,7 @@
     <Card class="w-96 max-w-[90vw]" onclick={(e) => e.stopPropagation()}>
       <CardHeader class="text-center">
         <CardTitle id="session-modal-title" class="text-xl font-bold">
-          📚 Reading Session Complete!
+          📚 読書セッション完了！
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -74,9 +74,9 @@
             >
               <Flame class="w-5 h-5 text-orange-500" />
               <div>
-                <div class="text-sm text-gray-600">Streak</div>
+                <div class="text-sm text-gray-600">連続記録</div>
                 <div class="font-bold text-orange-600">
-                  {currentStreak} days
+                  {currentStreak} 日
                 </div>
               </div>
             </div>
@@ -85,7 +85,7 @@
             <div class="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg">
               <Clock class="w-5 h-5 text-blue-500" />
               <div>
-                <div class="text-sm text-gray-600">Time</div>
+                <div class="text-sm text-gray-600">読書時間</div>
                 <div class="font-bold text-blue-600">{sessionTime}</div>
               </div>
             </div>
@@ -94,7 +94,7 @@
             <div class="flex items-center space-x-2 p-3 bg-green-50 rounded-lg">
               <BookOpen class="w-5 h-5 text-green-500" />
               <div>
-                <div class="text-sm text-gray-600">Words Read</div>
+                <div class="text-sm text-gray-600">読んだ単語数</div>
                 <div class="font-bold text-green-600">
                   {sessionData.wordsRead.toLocaleString()}
                 </div>
@@ -107,7 +107,7 @@
             >
               <Brain class="w-5 h-5 text-purple-500" />
               <div>
-                <div class="text-sm text-gray-600">Words Learned</div>
+                <div class="text-sm text-gray-600">覚えた単語数</div>
                 <div class="font-bold text-purple-600">
                   {sessionData.wordsLearned}
                 </div>
@@ -118,34 +118,34 @@
           <!-- Encouragement Message -->
           <div class="text-center text-gray-600 text-sm">
             {#if sessionData.wordsRead > 1000}
-              🎉 Excellent progress! You're building great reading habits.
+              🎉 素晴らしい進歩です！良い読書習慣が身についています。
             {:else if sessionData.wordsRead > 500}
-              👏 Great job! Keep up the consistent reading.
+              👏 よくできました！この調子で続けていきましょう。
             {:else if sessionData.wordsRead > 100}
-              ✨ Nice work! Every bit of reading counts.
+              ✨ お疲れ様でした！少しずつでも着実に進歩しています。
             {:else}
-              🌱 Every reading session helps you grow. Keep it up!
+              🌱 読書は積み重ねが大切です。がんばって続けましょう！
             {/if}
           </div>
 
           <!-- Action Buttons -->
           <div class="flex gap-2">
             <Button variant="outline" onclick={handleClose} class="flex-1">
-              Close
+              閉じる
             </Button>
             {#if sessionData.wordsLearned > 0}
               <Button
                 onclick={handleGoToFlashcards}
                 class="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
               >
-                Review Flashcards ({sessionData.wordsLearned})
+                単語カードを復習 ({sessionData.wordsLearned})
               </Button>
             {:else}
               <Button
                 onclick={handleGoToFlashcards}
                 class="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
               >
-                Browse Flashcards
+                単語カードを見る
               </Button>
             {/if}
           </div>

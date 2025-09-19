@@ -34,7 +34,7 @@
   const weeklyData = $derived([...stats.daily]);
   const datasets = $derived([
     {
-      label: "Words Read",
+      label: "読んだ単語数",
       data: [...weeklyData],
       backgroundColor: "rgba(44, 24, 16, 0.6)",
       borderColor: "#2C1810",
@@ -111,21 +111,21 @@
   <h2
     class="pl-2 text-xl font-semibold text-neutral-700 dark:text-neutral-300 col-span-full"
   >
-    Your Reading Stats
+    読書統計
   </h2>
   <Card>
     <CardHeader>
-      <CardTitle>Daily Streak</CardTitle>
+      <CardTitle>連続記録</CardTitle>
     </CardHeader>
     <CardContent>
       <div class="flex items-center gap-3">
         <Flame class="size-6 text-orange-500" aria-hidden="true" />
         <div>
           <div class="text-2xl font-semibold" aria-label="current streak">
-            {currentStreak} day{currentStreak === 1 ? "" : "s"}
+            {currentStreak} 日
           </div>
           <div class="text-xs text-neutral-600 dark:text-neutral-400">
-            Consecutive reading days
+            連続読書日数
           </div>
         </div>
       </div>
@@ -134,11 +134,11 @@
   <Card class="md:col-span-2">
     <CardHeader>
       <div class="flex items-center justify-between">
-        <CardTitle>Weekly Goal</CardTitle>
+        <CardTitle>週間目標</CardTitle>
         <button
           onclick={openGoalModal}
           class="p-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-          aria-label="Edit weekly goal"
+          aria-label="週間目標を編集"
         >
           <Settings class="size-4 text-neutral-500" />
         </button>
@@ -146,7 +146,7 @@
     </CardHeader>
     <CardContent>
       <div class="text-sm mb-2">
-        {totalThisWeek} / {weeklyGoal} words
+        {totalThisWeek} / {weeklyGoal} 単語
       </div>
       <div
         class="w-full h-3 rounded bg-neutral-200 dark:bg-neutral-800 overflow-hidden"
@@ -154,11 +154,11 @@
         <div
           class="h-3 bg-emerald-500 transition-[width] duration-300"
           style={`width: ${progressPct}%`}
-          aria-label="weekly goal progress"
+          aria-label="週間目標の進捗"
         ></div>
       </div>
       <div class="mt-2 text-xs text-neutral-600 dark:text-neutral-400">
-        {progressPct}% complete
+        {progressPct}% 達成
       </div>
     </CardContent>
   </Card>
@@ -166,7 +166,7 @@
   <div class="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
     <Card class="md:col-span-2">
       <CardHeader>
-        <CardTitle>Weekly Reading</CardTitle>
+        <CardTitle>週間読書量</CardTitle>
       </CardHeader>
       <CardContent>
         <div class="flex justify-center items-center">
@@ -176,22 +176,19 @@
     </Card>
     <Card>
       <CardHeader>
-        <CardTitle>Summary</CardTitle>
+        <CardTitle>まとめ</CardTitle>
       </CardHeader>
       <CardContent>
         <ul class="text-sm space-y-2">
-          <li>Total Words This Week: <strong>{totalThisWeek}</strong></li>
-          <li>Avg. Daily: <strong>{avgDaily}</strong></li>
+          <li>今週の合計単語数: <strong>{totalThisWeek}</strong></li>
+          <li>日平均: <strong>{avgDaily}</strong></li>
           <li>
-            Longest Streak: <strong
-              >{longestStreak} day{longestStreak === 1 ? "" : "s"}</strong
-            >
+            最長連続記録: <strong>{longestStreak} 日</strong>
           </li>
         </ul>
       </CardContent>
     </Card>
   </div>
-  <div class="h-12"></div>
 </section>
 
 <GoalModal

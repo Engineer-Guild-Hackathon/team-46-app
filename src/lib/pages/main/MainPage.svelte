@@ -93,7 +93,7 @@
         class={selectedView === "browse"
           ? "bg-accent-foreground rounded-xl"
           : "rounded-xl"}
-        onclick={() => (location.hash = "#/")}>Browse</Button
+        onclick={() => (location.hash = "#/")}>本を探す</Button
       >
       <Button
         size="sm"
@@ -101,7 +101,7 @@
         class={selectedView === "stats"
           ? "bg-accent-foreground rounded-xl"
           : "rounded-xl"}
-        onclick={() => (location.hash = "#/stats")}>Stats</Button
+        onclick={() => (location.hash = "#/stats")}>統計</Button
       >
       <Button
         size="sm"
@@ -109,7 +109,7 @@
         class={selectedView === "flashcards"
           ? "bg-accent-foreground rounded-xl"
           : "rounded-xl"}
-        onclick={() => (location.hash = "#/flashcards")}>Flashcards</Button
+        onclick={() => (location.hash = "#/flashcards")}>単語カード</Button
       >
     </div>
   </nav>

@@ -575,7 +575,8 @@
       if (firstLoad) firstLoad = false;
     } catch (_e: unknown) {
       const e = _e as Error | undefined;
-      error = e instanceof Error ? e.message : "Failed to load text";
+      error =
+        e instanceof Error ? e.message : "テキストの読み込みに失敗しました";
     } finally {
       if (isInitial) loading = false;
       lastLoadCompletedAt = Date.now();
@@ -1779,7 +1780,7 @@
         class="btn btn-ghost backBtn"
         type="button"
         variant="outline"
-        aria-label="Go back"
+        aria-label="戻る"
         onclick={handleGoBack}
       >
         <ChevronLeft class="w-5 h-5" />
@@ -1797,12 +1798,12 @@
       </div>
       <Button
         variant="outline"
-        aria-label="Mark difficult"
+        aria-label="難易度を下げる"
         disabled={loading}
         onclick={handleDifficult}>難易度を下げる</Button
       >
     </header>
-    <div class="interaction-help mt-4" aria-label="Usage help">
+    <div class="interaction-help mt-4" aria-label="使い方ヘルプ">
       <div
         class="mx-auto w-full bg-card/80 border border-[var(--border)] rounded-xl px-3 py-2 shadow-sm"
       >
@@ -1933,7 +1934,8 @@
                     >
                       <div class="flex-1 h-[1px] bg-slate-200"></div>
                       <div class="px-3">
-                        Page {pageNumberForBoundary[b.idxStart + j + 1] ?? "—"}
+                        ページ {pageNumberForBoundary[b.idxStart + j + 1] ??
+                          "—"}
                       </div>
                       <div class="flex-1 h-[1px] bg-slate-200"></div>
                     </div>
@@ -1965,7 +1967,7 @@
     {/if}
 
     <div class="mt-4 text-center text-sm text-primary/200 shrink-0">
-      Rate: {rateDisplay}
+      難易度: {rateDisplay}
     </div>
     <div class="actions flex items-center gap-2 shrink-0"></div>
   </div>

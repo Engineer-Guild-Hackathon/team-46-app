@@ -93,7 +93,7 @@
     pie = new Chart(pieEl, {
       type: "pie",
       data: {
-        labels: ["Not learned", "Learning", "Developed", "Mastered"],
+        labels: ["未学習", "学習中", "習得中", "習得済み"],
         datasets: [
           {
             data: pieData(),
@@ -126,26 +126,26 @@
   <h2
     class="pl-2 text-xl font-semibold text-neutral-700 dark:text-neutral-300 col-span-full"
   >
-    Word Flashcards
+    単語カード
   </h2>
 
   <!-- Study Overview - 1/3 on md -->
   <Card class="md:col-span-1">
     <CardHeader>
-      <CardTitle>Study overview</CardTitle>
+      <CardTitle>学習状況</CardTitle>
     </CardHeader>
     <CardContent class="text-sm text-muted-foreground">
       <div class="space-y-4">
         <div>
-          <span>Due: {queue.length}</span>
+          <span>復習予定: {queue.length}</span>
           <span class="mx-2">•</span>
-          <span>Total: {s.total}</span>
+          <span>合計: {s.total}</span>
           <span class="mx-2">•</span>
-          <span>New: {s.new}</span>
+          <span>新規: {s.new}</span>
         </div>
         <div class="flex flex-col items-center gap-4">
           <div class="size-28">
-            <canvas bind:this={pieEl} aria-label="Progress pie chart"></canvas>
+            <canvas bind:this={pieEl} aria-label="進捗円グラフ"></canvas>
           </div>
           <div class="grid grid-cols-1 gap-2 text-foreground text-xs">
             <div class="flex items-center gap-2">
@@ -153,28 +153,28 @@
                 class="inline-block size-3 rounded-full"
                 style="background: rgb(156,163,175)"
               ></span>
-              Not learned: {cats["not-learned"]}
+              未学習: {cats["not-learned"]}
             </div>
             <div class="flex items-center gap-2">
               <span
                 class="inline-block size-3 rounded-full"
                 style="background: rgb(59,130,246)"
               ></span>
-              Learning: {cats.learning}
+              学習中: {cats.learning}
             </div>
             <div class="flex items-center gap-2">
               <span
                 class="inline-block size-3 rounded-full"
                 style="background: rgb(245,158,11)"
               ></span>
-              Developed: {cats.developed}
+              習得中: {cats.developed}
             </div>
             <div class="flex items-center gap-2">
               <span
                 class="inline-block size-3 rounded-full"
                 style="background: rgb(16,185,129)"
               ></span>
-              Mastered: {cats.mastered}
+              習得済み: {cats.mastered}
             </div>
           </div>
         </div>
@@ -185,7 +185,7 @@
   <!-- Flashcard - 2/3 on md -->
   <Card class="md:col-span-2">
     <CardHeader>
-      <CardTitle>Flashcards</CardTitle>
+      <CardTitle>単語カード</CardTitle>
     </CardHeader>
     <CardContent>
       <Button
@@ -198,7 +198,7 @@
             flip();
           }
         }}
-        aria-label="Flashcard"
+        aria-label="単語カード"
         type="button"
       >
         {#if current}
@@ -212,9 +212,9 @@
             {/if}
           </div>
         {:else if s.total === 0}
-          No cards.
+          カードがありません。
         {:else}
-          All done for now. 🎉
+          今日の分は完了しました。🎉
         {/if}
       </Button>
 
@@ -223,25 +223,25 @@
           variant="outline"
           class="border"
           onclick={() => grade(1)}
-          aria-label="Again (1)">Again</Button
+          aria-label="もう一度 (1)">もう一度</Button
         >
         <Button
           variant="outline"
           class="border"
           onclick={() => grade(3)}
-          aria-label="Hard (3)">Hard</Button
+          aria-label="難しい (3)">難しい</Button
         >
         <Button
           variant="outline"
           class="border"
           onclick={() => grade(4)}
-          aria-label="Good (4)">Good</Button
+          aria-label="良い (4)">良い</Button
         >
         <Button
           variant="outline"
           class="border"
           onclick={() => grade(5)}
-          aria-label="Easy (5)">Easy</Button
+          aria-label="簡単 (5)">簡単</Button
         >
       </div>
     </CardContent>
@@ -252,12 +252,12 @@
     <CollapsibleRoot bind:open={collapsibleOpen}>
       <CardHeader>
         <div class="flex items-center justify-between">
-          <CardTitle>All words</CardTitle>
+          <CardTitle>すべての単語</CardTitle>
           <CollapsibleTrigger class="underline text-sm">
             {#if collapsibleOpen}
-              Hide
+              隠す
             {:else}
-              Show
+              表示
             {/if}
           </CollapsibleTrigger>
         </div>
@@ -267,16 +267,16 @@
           <Table.Root>
             <Table.Header>
               <Table.Row>
-                <Table.Head>Word</Table.Head>
-                <Table.Head>Definition</Table.Head>
-                <Table.Head class="w-4">Delete</Table.Head>
+                <Table.Head>単語</Table.Head>
+                <Table.Head>意味</Table.Head>
+                <Table.Head class="w-4">削除</Table.Head>
               </Table.Row>
             </Table.Header>
             <Table.Body>
               {#if deck.cards.length === 0}
                 <Table.Row>
                   <Table.Cell colspan="3" class="text-muted-foreground">
-                    No cards saved yet.
+                    まだ単語が保存されていません。
                   </Table.Cell>
                 </Table.Row>
               {:else}
@@ -293,7 +293,7 @@
                         variant="ghost"
                         size="sm"
                         onclick={() => deleteCard(c.id)}
-                        aria-label={`Delete ${c.front}`}
+                        aria-label={`${c.front}を削除`}
                         class="h-8 w-8 p-0 text-destructive hover:text-destructive"
                       >
                         <Trash2 class="h-4 w-4" />
