@@ -89,8 +89,6 @@
     showGoalModal = false;
   }
 
-  // Lightweight weekly goal (can be made user-configurable later)
-  const _WEEKLY_GOAL = 1000;
   const progressPct = $derived(
     Math.max(0, Math.min(100, Math.round((totalThisWeek / weeklyGoal) * 100))),
   );
