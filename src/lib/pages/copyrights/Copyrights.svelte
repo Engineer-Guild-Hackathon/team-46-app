@@ -42,7 +42,6 @@
     <section>
       <h2 class="text-lg font-semibold text-gray-900 mb-3">アプリケーション</h2>
       <div class="text-sm text-gray-700">
-        <p>© 2025 FlexRead. Engineer Guild Hackathon向けに開発。</p>
         <p class="mt-2 text-gray-500">
           このアプリケーションは、パブリックドメインおよび自由に利用可能なテキストの読書インターフェースを提供します。すべてのコンテンツの権利は、それぞれの所有者に帰属します。
         </p>
