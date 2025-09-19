@@ -39,6 +39,13 @@
     addCardIfMissing,
     removeDefinitionOrDelete,
   } from "../flashcards/flashcardsStore";
+  import {
+    initSession,
+    getSession,
+    updateSessionWordsRead,
+    updateSessionWordsLearned,
+    completeSession,
+  } from "./sessionStats";
 
   export let bookId: string;
 
@@ -48,6 +55,10 @@
   let sentences: Sentence[] = [];
   let selected = new Set<number>();
   let bubbleVisible = new Set<number>();
+
+  // Reactive window width for responsive behavior
+  let windowWidth = 800; // Default fallback
+  let windowResizeCleanup: (() => void) | null = null;
 
   // Pagination / reader state
   let currentStart = 0;
@@ -145,6 +156,17 @@
     } catch {
       /* ignore */
     }
+  }
+
+  /**
+   * Clean a word for flashcard storage by removing underlines and
+   * everything after commas (including level markers)
+   */
+  function cleanWordForFlashcard(word: string): string {
+    return word
+      .replace(/_/g, "") // Remove all underlines
+      .split(",")[0] // Take only the part before the first comma
+      .trim(); // Remove any extra whitespace
   }
 
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
@@ -478,7 +500,11 @@
             const matches = text.match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g);
             return acc + (matches ? matches.length : 0);
           }, 0);
-          if (words > 0) persistWordsRead(words);
+          if (words > 0) {
+            persistWordsRead(words);
+            // Update session tracking
+            updateSessionWordsRead(words);
+          }
         } catch {
           /* ignore stats errors */
         }
@@ -545,7 +571,8 @@
       if (firstLoad) firstLoad = false;
     } catch (_e: unknown) {
       const e = _e as Error | undefined;
-      error = e instanceof Error ? e.message : "Failed to load text";
+      error =
+        e instanceof Error ? e.message : "テキストの読み込みに失敗しました";
     } finally {
       if (isInitial) loading = false;
       lastLoadCompletedAt = Date.now();
@@ -676,6 +703,8 @@
         _lastTapWord === idx &&
         now - _lastTapAt <= DOUBLE_TAP_MS;
       if (isDouble) {
+        // Prevent default zoom behavior on mobile double-tap
+        e.preventDefault();
         set.delete(idx);
         if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
         if (set.size === 0) delete wordHighlights[i];
@@ -704,12 +733,13 @@
           let m: RegExpExecArray | null;
           while ((m = re.exec(rawText)) !== null) words.push(m[0]);
           const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+          const cleanWord = cleanWordForFlashcard(wordValue);
           const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
           console.debug("[Flashcards] mobile unselect -> remove", {
-            wordId: wordValue,
+            wordId: cleanWord,
             def,
           });
-          if (def) removeDefinitionOrDelete(wordValue, def);
+          if (def) removeDefinitionOrDelete(cleanWord, def);
         } catch {
           /* ignore flashcard removal */
         }
@@ -808,11 +838,16 @@
       // Also add to flashcards storage (word front, sentence as back)
       try {
         const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
-        addCardIfMissing({
-          id: wordValue.toLowerCase(),
-          front: wordValue,
+        const cleanWord = cleanWordForFlashcard(wordValue);
+        const wasAdded = addCardIfMissing({
+          id: cleanWord.toLowerCase(),
+          front: cleanWord,
           back: def,
         });
+        // Track words learned in session if a new card was added
+        if (wasAdded) {
+          updateSessionWordsLearned(1);
+        }
       } catch {
         /* ignore card add */
       }
@@ -854,12 +889,13 @@
       let m: RegExpExecArray | null;
       while ((m = re.exec(rawText)) !== null) words.push(m[0]);
       const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+      const cleanWord = cleanWordForFlashcard(wordValue);
       const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
       console.debug("[Flashcards] desktop unselect -> remove", {
-        wordId: wordValue,
+        wordId: cleanWord,
         def,
       });
-      if (def) removeDefinitionOrDelete(wordValue, def);
+      if (def) removeDefinitionOrDelete(cleanWord, def);
     } catch {
       /* ignore flashcard removal */
     }
@@ -945,7 +981,27 @@
 
   function touchPointerUp(i: number, e: PointerEvent) {
     const press = touchPresses[i];
-    if (!press) return;
+    if (!press) {
+      // No long press was detected, check if this might be a double-tap on a word
+      // to prevent zoom behavior
+      const idx = getWordIndexAtPointer(i, e);
+      if (idx != null) {
+        const set = wordHighlights[i];
+        if (set && set.has(idx)) {
+          // This is a tap on an already selected word, check for double-tap
+          const now = Date.now();
+          const isDouble =
+            _lastTapSentence === i &&
+            _lastTapWord === idx &&
+            now - _lastTapAt <= DOUBLE_TAP_MS;
+          if (isDouble) {
+            // Prevent zoom on double-tap
+            e.preventDefault();
+          }
+        }
+      }
+      return;
+    }
     window.clearTimeout(press.timer);
     const wasArmed = press.triggered;
     // remove the stored press entry immediately
@@ -1138,6 +1194,20 @@
 
   // Lifecycle: initial load and observers
   onMount(async () => {
+    // Initialize and track window width for responsive behavior
+    const updateWindowWidth = () => {
+      if (typeof window !== "undefined") {
+        windowWidth = window.innerWidth;
+      }
+    };
+    updateWindowWidth(); // Set initial value
+    window.addEventListener("resize", updateWindowWidth);
+    windowResizeCleanup = () =>
+      window.removeEventListener("resize", updateWindowWidth);
+
+    // Initialize reading session
+    getSession() || initSession();
+
     // Load persisted user rate if available
     try {
       const stored = localStorage.getItem(rateStorageKey(bookId));
@@ -1349,9 +1419,8 @@
   onDestroy(() => {
     // ensure scroll-save timer cleared
     if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
-  });
-
-  onDestroy(() => {
+    // cleanup window resize listener
+    windowResizeCleanup?.();
     if (readerEl)
       readerEl.removeEventListener("scroll", updateScrollProgressDebounced);
     if (readerEl)
@@ -1677,6 +1746,14 @@
     return blocks;
   }
 
+  // Handle going back and complete session
+  function handleGoBack() {
+    // Complete the session (this saves it for MainPage to display)
+    completeSession();
+    // Navigate back to main page
+    window.history.back();
+  }
+
   $: blocks = buildBlocks(sentences);
   // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
   $: rateDisplay = userRate !== null ? userRate : "—";
@@ -1699,8 +1776,8 @@
         class="btn btn-ghost backBtn"
         type="button"
         variant="outline"
-        aria-label="Go back"
-        onclick={() => window.history.back()}
+        aria-label="戻る"
+        onclick={handleGoBack}
       >
         <ChevronLeft class="w-5 h-5" />
       </Button>
@@ -1717,12 +1794,12 @@
       </div>
       <Button
         variant="outline"
-        aria-label="Mark difficult"
+        aria-label="難易度を下げる"
         disabled={loading}
         onclick={handleDifficult}>難易度を下げる</Button
       >
     </header>
-    <div class="interaction-help mt-4" aria-label="Usage help">
+    <div class="interaction-help mt-4" aria-label="使い方ヘルプ">
       <div
         class="mx-auto w-full bg-card/80 border border-[var(--border)] rounded-xl px-3 py-2 shadow-sm"
       >
@@ -1761,7 +1838,7 @@
             <li class="flex items-center gap-2">
               <span class="inline-block size-1.5 rounded-full bg-primary/60"
               ></span>
-              {#if window.innerWidth > 640}
+              {#if windowWidth > 640}
                 <span>長押し＋右クリックで文章の意味を表示</span>
               {:else}
                 <span>長押しで文章の意味を表示</span>
@@ -1792,7 +1869,7 @@
     {:else}
       <section class="book-text mt-2 flex-1 min-h-0">
         <article
-          class="reader font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-card/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm overflow-auto break-words h-full"
+          class="reader reader-content font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-card/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm overflow-auto break-words h-full"
           aria-live="polite"
           bind:this={readerEl}
         >
@@ -1853,7 +1930,8 @@
                     >
                       <div class="flex-1 h-[1px] bg-slate-200"></div>
                       <div class="px-3">
-                        Page {pageNumberForBoundary[b.idxStart + j + 1] ?? "—"}
+                        ページ {pageNumberForBoundary[b.idxStart + j + 1] ??
+                          "—"}
                       </div>
                       <div class="flex-1 h-[1px] bg-slate-200"></div>
                     </div>
@@ -1885,8 +1963,20 @@
     {/if}
 
     <div class="mt-4 text-center text-sm text-primary/200 shrink-0">
-      Rate: {rateDisplay}
+      難易度: {rateDisplay}
     </div>
     <div class="actions flex items-center gap-2 shrink-0"></div>
   </div>
 </main>
+
+<style>
+  /* Prevent zoom on double-tap for mobile devices */
+  .reader-content {
+    touch-action: manipulation;
+  }
+
+  /* Additional fallback for older browsers */
+  .reader-content * {
+    touch-action: manipulation;
+  }
+</style>

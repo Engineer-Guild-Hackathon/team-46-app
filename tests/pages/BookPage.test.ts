@@ -13,7 +13,7 @@ describe("BookPage", () => {
 
   it("renders the back button with correct aria-label", () => {
     const { getByLabelText } = render(BookPage, { bookId: "test" });
-    const backButton = getByLabelText("Go back");
+    const backButton = getByLabelText("戻る");
     expect(backButton).toBeTruthy();
   });
 

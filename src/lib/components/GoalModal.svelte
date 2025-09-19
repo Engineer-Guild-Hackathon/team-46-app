@@ -84,13 +84,13 @@
   >
     <Card class="w-80 max-w-[90vw]" onclick={(e) => e.stopPropagation()}>
       <CardHeader>
-        <CardTitle id="goal-modal-title">Set Weekly Goal</CardTitle>
+        <CardTitle id="goal-modal-title">週間目標を設定</CardTitle>
       </CardHeader>
       <CardContent>
         <div class="space-y-4">
           <div>
             <label for="goal-input" class="block text-sm font-medium mb-2">
-              Words per week:
+              週間単語数:
             </label>
             <input
               bind:this={inputElement}
@@ -102,13 +102,13 @@
               oninput={handleInput}
               onkeydown={handleKeydown}
               class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
-              placeholder="Enter your weekly goal"
+              placeholder="週間目標を入力"
               autocomplete="off"
             />
           </div>
 
           <div>
-            <div class="text-sm font-medium mb-2">Quick presets:</div>
+            <div class="text-sm font-medium mb-2">クイック設定:</div>
             <div class="flex gap-2">
               {#each presetGoals as preset}
                 <Button
@@ -125,10 +125,10 @@
 
           <div class="flex gap-2">
             <Button variant="outline" onclick={handleCancel} class="flex-1">
-              Cancel
+              キャンセル
             </Button>
             <Button onclick={handleSave} class="flex-1 text-secondary"
-              >Save</Button
+              >保存</Button
             >
           </div>
         </div>

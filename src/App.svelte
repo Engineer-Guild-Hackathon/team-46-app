@@ -2,6 +2,7 @@
   import "./app.css";
   import MainPage from "./lib/pages/main/MainPage.svelte";
   import BookPage from "./lib/pages/book/BookPage.svelte";
+  import Copyrights from "./lib/pages/copyrights/Copyrights.svelte";
   import { user } from "$lib/stores/user";
   // Ensure the user store is instantiated and side effects (userId generation) run,
   // and harden persistence for the integration test environment.
@@ -37,7 +38,7 @@
     }
   });
 
-  let route: "main" | "book" = "main";
+  let route: "main" | "book" | "copyrights" = "main";
   let bookId: string | null = null;
 
   function parseHash() {
@@ -46,6 +47,9 @@
     if (hash.startsWith("#/book/")) {
       route = "book";
       bookId = hash.replace("#/book/", "");
+    } else if (hash === "#/copyrights") {
+      route = "copyrights";
+      bookId = null;
     } else {
       route = "main";
       bookId = null;
@@ -60,4 +64,6 @@
   <MainPage />
 {:else if route === "book" && bookId}
   <BookPage {bookId} />
+{:else if route === "copyrights"}
+  <Copyrights />
 {/if}
