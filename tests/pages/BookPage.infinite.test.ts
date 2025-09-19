@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
-import BookPage from "../../src/lib/pages/BookPage.svelte";
+import BookPage from "../../src/lib/pages/book/BookPage.svelte";
 
 // Mock the API module used by BookPage
 vi.mock("../../src/lib/api/text", () => ({

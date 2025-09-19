@@ -7,7 +7,7 @@ declare global {
   }
 }
 import { render, waitFor } from "@testing-library/svelte";
-import BookPage from "$lib/pages/BookPage.svelte";
+import BookPage from "$lib/pages/book/BookPage.svelte";
 
 // Helper to parse URL params
 function getParam(url: string, key: string) {

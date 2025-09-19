@@ -17,7 +17,7 @@
     sentenceNo?: number;
   };
   import { getTextPage } from "$lib/api/text";
-  import { selectWordAtPointer as selectWordAtPointerHelper } from "$lib/pages/bookPageUtils";
+  import { selectWordAtPointer as selectWordAtPointerHelper } from "./bookPageUtils";
   import {
     mergeWithSavedSentences,
     setSentenceClicked,
@@ -25,7 +25,7 @@
     removeClickedWordIndex,
     readPages,
     writePages,
-  } from "$lib/pages/bookProgress";
+  } from "./bookProgress";
   import { ChevronLeft } from "@lucide/svelte";
   import Button from "$lib/components/ui/button/button.svelte";
   import {
@@ -34,6 +34,11 @@
     logOpenWord,
   } from "$lib/api/logging";
   import SentenceInline from "$lib/pages/components/SentenceInline.svelte";
+  import { recordWordsRead as persistWordsRead } from "../stats/readingStats";
+  import {
+    addCardIfMissing,
+    removeDefinitionOrDelete,
+  } from "../flashcards/flashcardsStore";
 
   export let bookId: string;
 
@@ -47,6 +52,8 @@
   // Pagination / reader state
   let currentStart = 0;
   let lastEnd = 0;
+  let lastRequestedStart = 0; // Track the most recent page start requested
+  let lastForceReplacedStart = -1; // Track the last force-replaced page to avoid immediate reload
   let canNext = false;
   let readerEl: HTMLElement | null = null;
   let _wordsPerPage = 0;
@@ -58,16 +65,18 @@
   const pageNumberForBoundary: Record<number, number> = {};
   let pageCount = 0;
 
+  // Telemetry counters
   let lastLoadCompletedAt: number | null = null;
   let firstLoad = true;
 
   // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null;
-  let difficultBtnPending = false;
+  let _difficultBtnPending = false;
   const rateStorageKey = (id: string) => `bookRate:${id}`;
   // Per-book top-sentence number storage (stable across loads and resizes)
   const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
   let _scrollSaveTimer: number | null = null;
+  let _beforeUnloadHandler: (() => void) | null = null;
   const SCROLL_SAVE_DEBOUNCE = 200;
 
   function getTopVisibleSentenceIndex(): number | null {
@@ -112,11 +121,39 @@
   const subtitleRefs: Record<number, HTMLElement | null> = {};
   let currentSubtitle: string | null = null;
   let _subtitleUpdateTimer: number | null = null;
-  // Keep a reference to the beforeunload handler so we can remove it in a top-level onDestroy
-  let _beforeUnloadHandler: (() => void) | null = null;
+  // Double-tap tracking for mobile (unselect)
+  let _lastTapAt = 0;
+  let _lastTapSentence: number | null = null;
+  let _lastTapWord: number | null = null;
+  const DOUBLE_TAP_MS = 350;
+
+  // Usage help (collapsible) — default open, persist preference
+  const HELP_STORAGE_KEY = "reader:usageHelpOpen";
+  let helpOpen = true;
+  onMount(() => {
+    try {
+      const v = localStorage.getItem(HELP_STORAGE_KEY);
+      if (v !== null) helpOpen = v === "1" || v === "true";
+    } catch {
+      /* ignore */
+    }
+  });
+  function toggleHelp() {
+    helpOpen = !helpOpen;
+    try {
+      localStorage.setItem(HELP_STORAGE_KEY, helpOpen ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
 
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
-  async function loadPage(start = 0, charCountParam?: number) {
+  async function loadPage(
+    start = 0,
+    charCountParam?: number,
+    isDifficult?: boolean,
+    forceReplace?: boolean,
+  ) {
     const isInitial = start === 0;
     if (isInitial) loading = true;
     error = null;
@@ -145,8 +182,8 @@
       // Build and log API params
       // Telemetry counters: null on first page load, then zero if no interactions.
       // Determine if this is the very first load by checking firstLoad flag and start===0.
-      const wordClickCountParam = firstLoad && start === 0 ? null : 0;
-      const sentenceClickCountParam = firstLoad && start === 0 ? null : 0;
+      const _wordClickCountParam = firstLoad && start === 0 ? null : 0;
+      const _sentenceClickCountParam = firstLoad && start === 0 ? null : 0;
 
       const apiParams = {
         bookId,
@@ -156,19 +193,35 @@
             localStorage.getItem("userId")) ||
           "anonymous",
         charCount: charCountParam,
+        difficultBtn: isDifficult || null,
         time: timeSec,
-        difficultBtn: difficultBtnPending ? true : undefined,
-        wordClickCount: wordClickCountParam,
-        sentenceClickCount: sentenceClickCountParam,
       };
       console.debug("[BookPage] getTextPage params ->", apiParams);
 
+      // Track this as the last requested start position
+      lastRequestedStart = start;
+
+      // Track force replaces to prevent immediate reload
+      if (forceReplace) {
+        lastForceReplacedStart = start;
+        // Immediately suppress auto-loading to prevent infinite scroll trigger
+        _suppressAutoLoad = true;
+        _lastScrollTriggerAt = Date.now();
+        console.debug("[BookPage] Suppressing auto-load due to force replace");
+      } else {
+        // Reset the force replace tracking when loading a different page normally
+        lastForceReplacedStart = -1;
+      }
+
       // Request real text page from backend
-      const apiRes = await getTextPage(apiParams);
+      // Include telemetry counts after the first successful load; omit on first
+      const apiRes = await getTextPage({
+        ...apiParams,
+      });
       res = apiRes;
       // consume the pending difficult flag after the request so subsequent
       // calls are normal unless the user presses the button again.
-      difficultBtnPending = false;
+      _difficultBtnPending = false;
       if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
         userRate = apiRes.rate;
         try {
@@ -193,15 +246,194 @@
         bookId,
         mapped,
       ) as Sentence[];
-      if (start === 0) {
+
+      if (start === 0 && !forceReplace) {
+        // Initial page load - reset everything
         sentences = newSentences;
         currentStart = start;
         pageCount = 1;
+        pageBoundaries = new Set();
+        // Clear the boundary maps
+        Object.keys(pageBoundaryMap).forEach(
+          (key) => delete pageBoundaryMap[key],
+        );
+        Object.keys(pageNumberForBoundary).forEach(
+          (key) => delete pageNumberForBoundary[key],
+        );
         // persist initial fetch as first page
         try {
           writePages(bookId, [[...sentences].map((s) => toStoredSentence(s))]);
         } catch {
           /* ignore */
+        }
+      } else if (forceReplace) {
+        if (start === 0) {
+          // Force replacing from sentence 0 - reset everything like initial load
+          sentences = newSentences;
+          currentStart = start;
+          pageCount = 1;
+          pageBoundaries = new Set();
+          // Clear the boundary maps
+          Object.keys(pageBoundaryMap).forEach(
+            (key) => delete pageBoundaryMap[key],
+          );
+          Object.keys(pageNumberForBoundary).forEach(
+            (key) => delete pageNumberForBoundary[key],
+          );
+
+          // Set up boundary for infinite scroll continuation
+          if (newSentences.length > 0) {
+            const lastSentence = newSentences[newSentences.length - 1];
+            const nextSentenceNo =
+              lastSentence.sentenceNo != null
+                ? lastSentence.sentenceNo + 1
+                : start + newSentences.length;
+
+            // Add boundary at the end of the replaced content
+            pageBoundaries.add(newSentences.length);
+            pageBoundaries = new Set(pageBoundaries);
+            pageBoundaryMap[newSentences.length] = nextSentenceNo;
+            pageNumberForBoundary[newSentences.length] = 2; // Next page will be page 2
+
+            console.debug(
+              "[BookPage] Set up boundary after first page force replace",
+              {
+                boundaryIndex: newSentences.length,
+                nextSentenceNo,
+                sentencesCount: newSentences.length,
+              },
+            );
+          }
+
+          // persist initial fetch as first page
+          try {
+            writePages(bookId, [
+              [...sentences].map((s) => toStoredSentence(s)),
+            ]);
+          } catch {
+            /* ignore */
+          }
+        } else {
+          // Targeted page replacement - replace only the sentences from this page
+          const startSentenceNo = start;
+          const endSentenceNo = res.endSentenceNo;
+
+          console.debug("[BookPage] Looking for sentence range to replace", {
+            startSentenceNo,
+            endSentenceNo,
+            existingSentenceNos: sentences.map((s) => s.sentenceNo),
+            newSentenceNos: newSentences.map((s) => s.sentenceNo),
+          });
+
+          // Find the range of sentence indices that correspond to this page
+          let startIndex = -1;
+          let endIndex = -1;
+
+          // Find where this page starts
+          for (let i = 0; i < sentences.length; i++) {
+            const sentenceNo = sentences[i].sentenceNo;
+            if (sentenceNo === startSentenceNo) {
+              startIndex = i;
+              break;
+            }
+          }
+
+          if (startIndex !== -1) {
+            // Find the end by looking for the next page boundary or end of array
+            // Look for the next sentence that doesn't belong to this page
+            const newSentenceNos = new Set(
+              newSentences.map((s) => s.sentenceNo),
+            );
+
+            for (let i = startIndex; i < sentences.length; i++) {
+              const sentenceNo = sentences[i].sentenceNo;
+              if (sentenceNo != null && !newSentenceNos.has(sentenceNo)) {
+                // This sentence doesn't belong to the new page, so end before it
+                endIndex = i - 1;
+                break;
+              }
+            }
+
+            // If we didn't find a boundary, replace to the end
+            if (endIndex === -1) {
+              endIndex = sentences.length - 1;
+            }
+          }
+
+          if (startIndex !== -1 && endIndex !== -1) {
+            // Replace the sentences in this range
+            sentences.splice(
+              startIndex,
+              endIndex - startIndex + 1,
+              ...newSentences,
+            );
+            sentences = [...sentences]; // Trigger reactivity
+
+            // Update boundary mapping: find the boundary that corresponds to this replaced range
+            // and update it to point to the next sentence after the replacement
+            const lastReplacedSentence = newSentences[newSentences.length - 1];
+            const nextSentenceNo =
+              lastReplacedSentence?.sentenceNo != null
+                ? lastReplacedSentence.sentenceNo + 1
+                : endSentenceNo + 1;
+
+            console.debug("[BookPage] Current pageBoundaryMap before update:", {
+              ...pageBoundaryMap,
+            });
+
+            // Find the boundary index that was pointing to this range
+            // Look for any boundary that points to a sentence in the replaced range
+            let boundaryUpdated = false;
+            for (const [boundaryIdx, sentenceNo] of Object.entries(
+              pageBoundaryMap,
+            )) {
+              if (
+                sentenceNo >= startSentenceNo &&
+                sentenceNo <= endSentenceNo
+              ) {
+                // Update this boundary to point to the next sentence after replacement
+                pageBoundaryMap[Number(boundaryIdx)] = nextSentenceNo;
+                console.debug("[BookPage] Updated boundary mapping", {
+                  boundaryIdx: Number(boundaryIdx),
+                  oldSentenceNo: sentenceNo,
+                  newSentenceNo: nextSentenceNo,
+                });
+                boundaryUpdated = true;
+              }
+            }
+
+            if (!boundaryUpdated) {
+              console.warn(
+                "[BookPage] No boundary found to update for replaced range",
+                {
+                  startSentenceNo,
+                  endSentenceNo,
+                  pageBoundaryMap: { ...pageBoundaryMap },
+                },
+              );
+            }
+
+            console.debug("[BookPage] 🔄 Replaced page sentences", {
+              startIndex,
+              endIndex,
+              startSentenceNo,
+              endSentenceNo,
+              replacedCount: endIndex - startIndex + 1,
+              newCount: newSentences.length,
+            });
+          } else {
+            console.warn(
+              "[BookPage] Could not find sentence range to replace, appending instead",
+            );
+            // Fallback to append if we can't find the range
+            const beforeLen = sentences.length;
+            pageBoundaries.add(beforeLen);
+            pageBoundaries = new Set(pageBoundaries);
+            pageBoundaryMap[beforeLen] = start;
+            pageCount = (pageCount || 1) + 1;
+            pageNumberForBoundary[beforeLen] = pageCount;
+            sentences = sentences.concat(newSentences);
+          }
         }
       } else {
         const beforeLen = sentences.length;
@@ -238,10 +470,78 @@
         lastEnd = res.endSentenceNo;
         // backend provided content -> allow loading next
         canNext = true;
+
+        // Estimate words read and persist to local stats (Mon-Sun week)
+        try {
+          const words = newSentences.reduce((acc, s) => {
+            const text = s?.en ?? "";
+            const matches = text.match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g);
+            return acc + (matches ? matches.length : 0);
+          }, 0);
+          if (words > 0) persistWordsRead(words);
+        } catch {
+          /* ignore stats errors */
+        }
       }
       // Important: render the reader content now so measurement can find it
       loading = false;
 
+      // Reinitialize infinite scroll observer after content changes
+      if (forceReplace) {
+        await tick(); // Wait for DOM to update
+
+        // Re-establish scroll event listeners after force replace
+        if (readerEl) {
+          // Remove existing listeners first to avoid duplicates
+          readerEl.removeEventListener("scroll", updateScrollProgressDebounced);
+          readerEl.removeEventListener("scroll", saveTopSentenceDebounced);
+          readerEl.removeEventListener(
+            "scroll",
+            updateCurrentSubtitleDebounced,
+          );
+          readerEl.removeEventListener("scroll", cancelAllTouchPresses);
+
+          // Re-add scroll listeners
+          readerEl.addEventListener("scroll", updateScrollProgressDebounced, {
+            passive: true,
+          });
+
+          readerEl.addEventListener("scroll", saveTopSentenceDebounced, {
+            passive: true,
+          });
+          readerEl.addEventListener("scroll", updateCurrentSubtitleDebounced, {
+            passive: true,
+          });
+          readerEl.addEventListener("scroll", cancelAllTouchPresses, {
+            passive: true,
+          });
+
+          console.debug(
+            "[BookPage] Re-established scroll event listeners after force replace",
+          );
+        }
+
+        // Temporarily suppress auto-loading to prevent immediate reload
+        _suppressAutoLoad = true;
+        console.debug(
+          "[BookPage] Extended auto-load suppression after force replace completion",
+        );
+        setTimeout(() => {
+          _suppressAutoLoad = false;
+          console.debug(
+            "[BookPage] Re-enabled auto-load after force replace cooldown",
+          );
+          // Clean up any stale boundary elements before reinitializing observer
+          for (const _k in boundaryEls) {
+            delete boundaryEls[_k];
+          }
+          console.debug(
+            "[BookPage] Cleaned up stale boundary elements before observer reinit",
+          );
+          // Reinitialize observer after suppression ends to avoid immediate triggers
+          initInfiniteObserver();
+        }, 3000); // Suppress for 3 seconds after force replace
+      }
       if (firstLoad) firstLoad = false;
     } catch (_e: unknown) {
       const e = _e as Error | undefined;
@@ -266,7 +566,6 @@
     pages.push(sentences.slice(start));
     return pages;
   }
-
   // Helper: convert our in-memory Sentence to the persisted StoredSentence shape
   // We intentionally read persisted fields if present (mergeWithSavedSentences
   // will attach them), and default to sensible empties otherwise.
@@ -296,12 +595,17 @@
   // Infinite scroll helpers
   let loadingMore = false;
   async function loadMore() {
-    if (loadingMore || loading) return;
+    if (loadingMore || loading || _currentlyLoading) return;
     if (!canNext && sentences.length > 0) return;
     loadingMore = true;
+    _currentlyLoading = true;
     const nextStart = lastEnd + 1;
-    await loadPage(nextStart, getCharCountForViewport());
+    // Don't reload a page that was just force-replaced
+    if (nextStart !== lastForceReplacedStart) {
+      await loadPage(nextStart, getCharCountForViewport());
+    }
     loadingMore = false;
+    _currentlyLoading = false;
   }
 
   function toggleSentence(i: number) {
@@ -328,7 +632,6 @@
     // select
     selected.add(i);
     selected = new Set(selected);
-
     // Fire sentence translation open log (first time only)
     {
       const s = sentences[i];
@@ -366,25 +669,58 @@
     if (idx == null) return;
     const set = wordHighlights[i] || (wordHighlights[i] = new Set<number>());
     if (set.has(idx)) {
-      set.delete(idx);
-      if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
-      if (set.size === 0) delete wordHighlights[i];
-      reassignWordHighlights();
-      hideWordTooltip(i);
-      // remove persisted clicked word index
-      try {
-        const s = sentences[i];
-        removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
-        // update in-memory clickedWordIndex to stay in sync
-        const arr: number[] = Array.isArray(
-          (sentences[i] as any).clickedWordIndex,
-        )
-          ? ((sentences[i] as any).clickedWordIndex as number[])
-          : [];
-        (sentences[i] as any).clickedWordIndex = arr.filter((v) => v !== idx);
-      } catch {
-        /* ignore */
+      // Already selected: if this is a double-tap/click on same word -> unselect
+      const now = Date.now();
+      const isDouble =
+        _lastTapSentence === i &&
+        _lastTapWord === idx &&
+        now - _lastTapAt <= DOUBLE_TAP_MS;
+      if (isDouble) {
+        set.delete(idx);
+        if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
+        if (set.size === 0) delete wordHighlights[i];
+        reassignWordHighlights();
+        hideWordTooltip(i);
+        // remove persisted clicked word index
+        try {
+          const s = sentences[i];
+          removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+          // update in-memory clickedWordIndex to stay in sync
+          const arr: number[] = Array.isArray(
+            (sentences[i] as any).clickedWordIndex,
+          )
+            ? ((sentences[i] as any).clickedWordIndex as number[])
+            : [];
+          (sentences[i] as any).clickedWordIndex = arr.filter((v) => v !== idx);
+        } catch {
+          /* ignore */
+        }
+        // also remove definition from flashcards (mobile double-tap path)
+        try {
+          const sentence = sentences[i];
+          const rawText = sentence?.en ?? "";
+          const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+          const words: string[] = [];
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(rawText)) !== null) words.push(m[0]);
+          const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+          const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
+          console.debug("[Flashcards] mobile unselect -> remove", {
+            wordId: wordValue,
+            def,
+          });
+          if (def) removeDefinitionOrDelete(wordValue, def);
+        } catch {
+          /* ignore flashcard removal */
+        }
+      } else {
+        // Single click on selected word: re-display tooltip only
+        wordTooltipWordIndex[i] = idx;
+        showWordTooltip(i, idx);
       }
+      _lastTapAt = now;
+      _lastTapSentence = i;
+      _lastTapWord = idx;
       return;
     }
     set.add(idx);
@@ -469,10 +805,64 @@
       } catch {
         /* ignore */
       }
+      // Also add to flashcards storage (word front, sentence as back)
+      try {
+        const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
+        addCardIfMissing({
+          id: wordValue.toLowerCase(),
+          front: wordValue,
+          back: def,
+        });
+      } catch {
+        /* ignore card add */
+      }
     } catch {
       /* ignore word log */
     }
     showWordTooltip(i, idx);
+    // record tap for potential double-tap
+    _lastTapAt = Date.now();
+    _lastTapSentence = i;
+    _lastTapWord = idx;
+  }
+
+  // Double-click: unselect a highlighted word
+  function handleDblclick(i: number, e: MouseEvent) {
+    if (e.button !== 0) return;
+    const idx = getWordIndexAtPointer(i, e as unknown as PointerEvent);
+    if (idx == null) return;
+    const set = wordHighlights[i];
+    if (!set || !set.has(idx)) return;
+    set.delete(idx);
+    if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
+    if (set.size === 0) delete wordHighlights[i];
+    reassignWordHighlights();
+    hideWordTooltip(i);
+    // remove persisted clicked word index
+    try {
+      const s = sentences[i];
+      removeClickedWordIndex(bookId, s?.sentenceNo ?? i, s?.en ?? "", idx);
+    } catch {
+      /* ignore */
+    }
+    // remove definition from flashcards (if present)
+    try {
+      const sentence = sentences[i];
+      const rawText = sentence?.en ?? "";
+      const re = /[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+      const words: string[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(rawText)) !== null) words.push(m[0]);
+      const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+      const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
+      console.debug("[Flashcards] desktop unselect -> remove", {
+        wordId: wordValue,
+        def,
+      });
+      if (def) removeDefinitionOrDelete(wordValue, def);
+    } catch {
+      /* ignore flashcard removal */
+    }
   }
 
   // Context menu (right-click): toggle sentence translation
@@ -629,31 +1019,22 @@
   // Difficulty button: adjust user rate and reload
   async function handleDifficult() {
     if (loading) return;
-    const prevRate = userRate ?? 0;
-    userRate = Math.max(0, prevRate - 300);
-    try {
-      localStorage.setItem(rateStorageKey(bookId), String(userRate));
-    } catch {
-      /* ignore persist */
-    }
-    console.debug("[BookPage] 難しい pressed: lowering rate", {
-      previous: prevRate,
-      new: userRate,
-    });
     // Log difficult button press with previous rate (state before adjustment)
     void logDifficultBtn(
       (typeof localStorage !== "undefined" && localStorage.getItem("userId")) ||
         "anonymous",
-      prevRate,
+      userRate,
     ).catch(() => {});
 
     // mark that next getTextPage should include difficultBtn=true
-    difficultBtnPending = true;
+    _difficultBtnPending = true;
 
-    // Re-load current page with same start & charCount. The pending flag
-    // will cause the request to include `difficultBtn=true` so backend can
-    // return an updated `rate` value which we persist locally when received.
-    await loadPage(currentStart, getCharCountForViewport());
+    console.debug("[BookPage] Reloading last requested page", {
+      lastRequestedStart,
+    });
+
+    // Reload the last requested page with difficulty adjustment
+    await loadPage(lastRequestedStart, getCharCountForViewport(), true, true);
   }
 
   // Position word tooltip to avoid clipping
@@ -717,6 +1098,44 @@
     bubbleVisible = new Set(bubbleVisible);
   }
 
+  // Debounced function to save top sentence position
+  function saveTopSentenceDebounced() {
+    if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
+    _scrollSaveTimer = window.setTimeout(() => {
+      try {
+        const idx = getTopVisibleSentenceIndex();
+        if (idx != null) {
+          const s = sentences[idx];
+          if (s && s.sentenceNo != null) {
+            // compute current offset of this sentence from top of reader
+            let offset = 0;
+            try {
+              const el = elRefs[idx];
+              if (el && readerEl) {
+                const containerRect = readerEl.getBoundingClientRect();
+                const elRect = el.getBoundingClientRect();
+                offset = Math.max(
+                  0,
+                  Math.round(elRect.top - containerRect.top),
+                );
+              }
+            } catch {
+              /* ignore offset calc */
+            }
+            const payload = { sentenceNo: s.sentenceNo, offset };
+            localStorage.setItem(
+              topSentenceStorageKey(bookId),
+              JSON.stringify(payload),
+            );
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      _scrollSaveTimer = null;
+    }, SCROLL_SAVE_DEBOUNCE) as unknown as number;
+  }
+
   // Lifecycle: initial load and observers
   onMount(async () => {
     // Load persisted user rate if available
@@ -774,22 +1193,39 @@
         loading = false;
         // after DOM updates, scroll to top of last page so user resumes there
         await tick();
-        // Prefer restoring by top-visible sentence index; fall back to
-        // previous 'last page start' jump when no saved index exists.
+        // Prefer restoring by exact top-visible sentence and its offset; fall back to
+        // previous 'last page start' jump when no saved position exists.
         let restored = false;
         try {
           const raw = localStorage.getItem(topSentenceStorageKey(bookId));
           if (raw != null) {
-            const savedSentenceNo = Number(raw);
-            if (!Number.isNaN(savedSentenceNo) && readerEl) {
+            // Support both legacy (number) and new JSON format { sentenceNo, offset }
+            let savedSentenceNo: number | null = null;
+            let savedOffset = 0;
+            try {
+              if (raw.trim().startsWith("{")) {
+                const obj = JSON.parse(raw);
+                if (typeof obj?.sentenceNo === "number")
+                  savedSentenceNo = obj.sentenceNo;
+                if (typeof obj?.offset === "number")
+                  savedOffset = Math.max(0, Math.round(obj.offset));
+              } else {
+                const num = Number(raw);
+                if (!Number.isNaN(num)) savedSentenceNo = num;
+                // legacy value had an implicit small padding; consider it 0 offset now
+                savedOffset = 0;
+              }
+            } catch {
+              const num = Number(raw);
+              if (!Number.isNaN(num)) savedSentenceNo = num;
+            }
+            if (savedSentenceNo != null && readerEl) {
               // find the current index of the saved sentence number
               const foundIdx = sentences.findIndex(
                 (s) => (s.sentenceNo ?? -1) === savedSentenceNo,
               );
               if (foundIdx >= 0) {
-                // show the previous sentence so the reader can re-read a bit
-                const displayIdx = Math.max(0, foundIdx - 1);
-                const el = elRefs[displayIdx];
+                const el = elRefs[foundIdx];
                 if (el) {
                   // Temporarily disconnect observer to avoid triggering loads while we programmatically scroll
                   try {
@@ -799,14 +1235,12 @@
                   }
                   _suppressAutoLoad = true;
                   _lastScrollTriggerAt = Date.now();
-                  // compute delta between element top and container top and adjust scrollTop
+                  // compute delta between element top and container top and adjust scrollTop to restore exact offset
                   const containerRect = readerEl.getBoundingClientRect();
                   const elRect = el.getBoundingClientRect();
-                  // Align the sentence top to the reader top with a small padding
-                  const paddingTop = 8; // show the sentence from near the top
                   const targetScrollTop =
                     readerEl.scrollTop +
-                    Math.round(elRect.top - containerRect.top - paddingTop);
+                    Math.round(elRect.top - containerRect.top - savedOffset);
                   readerEl.scrollTop = targetScrollTop;
                   window.setTimeout(() => {
                     _suppressAutoLoad = false;
@@ -881,27 +1315,7 @@
       readerEl.addEventListener("scroll", updateScrollProgressDebounced, {
         passive: true,
       });
-      // persist top-visible sentence index (debounced)
-      const saveTopSentenceDebounced = () => {
-        if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
-        _scrollSaveTimer = window.setTimeout(() => {
-          try {
-            const idx = getTopVisibleSentenceIndex();
-            if (idx != null) {
-              const s = sentences[idx];
-              if (s && s.sentenceNo != null) {
-                localStorage.setItem(
-                  topSentenceStorageKey(bookId),
-                  String(s.sentenceNo),
-                );
-              }
-            }
-          } catch {
-            /* ignore */
-          }
-          _scrollSaveTimer = null;
-        }, SCROLL_SAVE_DEBOUNCE) as unknown as number;
-      };
+      // persist top-visible sentence index and offset (debounced)
       readerEl.addEventListener("scroll", saveTopSentenceDebounced, {
         passive: true,
       });
@@ -970,9 +1384,10 @@
   const SCROLL_TRIGGER_COOLDOWN_MS = 2500;
   let _lastScrollTriggerAt = 0;
   let _suppressAutoLoad = false;
+  let _currentlyLoading = false;
 
   function checkAndLoadNearBottom() {
-    if (_suppressAutoLoad) return;
+    if (_suppressAutoLoad || _currentlyLoading) return;
     if (!readerEl) return;
     try {
       const el = readerEl;
@@ -992,14 +1407,48 @@
       }
 
       const thresholdPx = LINES_FROM_BOTTOM * lineHeight + EXTRA_TRIGGER_PX;
+
+      console.debug("[BookPage] Scroll handler check", {
+        scrollTop,
+        clientHeight,
+        scrollHeight,
+        distanceFromBottom,
+        thresholdPx,
+        isNearBottom: distanceFromBottom <= thresholdPx,
+        lastEnd,
+        lastForceReplacedStart,
+      });
+
       if (distanceFromBottom <= thresholdPx) {
         const now = Date.now();
-        if (now - _lastScrollTriggerAt < SCROLL_TRIGGER_COOLDOWN_MS) return;
+        if (now - _lastScrollTriggerAt < SCROLL_TRIGGER_COOLDOWN_MS) {
+          console.debug("[BookPage] Scroll trigger on cooldown");
+          return;
+        }
         _lastScrollTriggerAt = now;
+        _currentlyLoading = true;
         if (lastEnd && lastEnd > 0) {
-          void loadPage(lastEnd + 1, getCharCountForViewport()).catch(() => {});
+          const nextStart = lastEnd + 1;
+          // Don't reload a page that was just force-replaced
+          if (nextStart !== lastForceReplacedStart) {
+            console.debug("[BookPage] Scroll handler triggering loadPage", {
+              nextStart,
+            });
+            void loadPage(nextStart, getCharCountForViewport()).finally(() => {
+              _currentlyLoading = false;
+            });
+          } else {
+            console.debug(
+              "[BookPage] Scroll handler skipped - matches force replaced start",
+              { nextStart, lastForceReplacedStart },
+            );
+            _currentlyLoading = false;
+          }
         } else {
-          void loadMore().catch(() => {});
+          console.debug("[BookPage] Scroll handler triggering loadMore");
+          void loadMore().finally(() => {
+            _currentlyLoading = false;
+          });
         }
       }
     } catch (_e) {
@@ -1023,25 +1472,81 @@
     if (!readerEl) return;
     observer = new IntersectionObserver(
       (entries) => {
+        console.debug("[BookPage] Intersection observer callback triggered", {
+          entriesCount: entries.length,
+          entries: entries.map((e) => ({
+            isIntersecting: e.isIntersecting,
+            boundingClientRect: e.boundingClientRect,
+            rootBounds: e.rootBounds,
+            intersectionRatio: e.intersectionRatio,
+            target: e.target.className || e.target.tagName,
+          })),
+        });
+
         for (const entry of entries) {
+          console.debug("[BookPage] Processing intersection entry", {
+            isIntersecting: entry.isIntersecting,
+            intersectionRatio: entry.intersectionRatio,
+            targetClass: entry.target.className,
+          });
+
           if (entry.isIntersecting) {
+            // Check if auto-loading is suppressed or already loading
+            if (_suppressAutoLoad || _currentlyLoading) {
+              console.debug(
+                "[BookPage] Infinite scroll observer triggered but auto-load is suppressed or already loading",
+                {
+                  suppressAutoLoad: _suppressAutoLoad,
+                  currentlyLoading: _currentlyLoading,
+                },
+              );
+              return;
+            }
+
             const el = entry.target as HTMLElement;
             // determine the boundary index by searching boundaryEls
             const idx = Number(
               Object.entries(boundaryEls).find(([_k, v]) => v === el)?.[0],
             );
+            console.debug("[BookPage] Boundary element intersecting", {
+              idx,
+              isFinite: Number.isFinite(idx),
+              boundaryEls: Object.keys(boundaryEls),
+            });
+
             if (!Number.isFinite(idx)) continue;
+
+            // Get the start sentence number before cleanup
+            const startSentenceNo = pageBoundaryMap[idx];
+
             // unobserve this boundary to avoid duplicate triggers
             observer?.unobserve(el);
             delete boundaryEls[idx];
-            // map to API start sentence
-            const startSentenceNo = pageBoundaryMap[idx];
+            // Clean up the boundary mapping to prevent reuse
+            delete pageBoundaryMap[idx];
+            delete pageNumberForBoundary[idx];
+            pageBoundaries.delete(idx);
+            pageBoundaries = new Set(pageBoundaries);
+
             if (startSentenceNo != null) {
+              console.debug("[BookPage] Loading next page from boundary", {
+                idx,
+                startSentenceNo,
+              });
+              _currentlyLoading = true;
               // request next chunk for this boundary
-              void loadPage(startSentenceNo, getCharCountForViewport());
+              void loadPage(startSentenceNo, getCharCountForViewport()).finally(
+                () => {
+                  _currentlyLoading = false;
+                },
+              );
             } else {
               // fallback to generic loadMore
-              void loadMore();
+              console.debug("[BookPage] Falling back to loadMore");
+              _currentlyLoading = true;
+              void loadMore().finally(() => {
+                _currentlyLoading = false;
+              });
             }
           }
         }
@@ -1054,12 +1559,31 @@
       },
     );
     // observe all existing boundaryEls
+    console.debug("[BookPage] Initializing infinite observer", {
+      boundaryEls: Object.keys(boundaryEls),
+      pageBoundaryMap: { ...pageBoundaryMap },
+      pageBoundaries: Array.from(pageBoundaries),
+    });
+
     for (const _k in boundaryEls) {
       const el = boundaryEls[_k];
       // Only observe boundaries that have a mapped start sentence (from API runs).
       // If we loaded pages from storage, pageBoundaryMap may not have an entry
       // for these boundaries — do not observe them to avoid accidental API calls.
-      if (el && pageBoundaryMap[_k] != null) observer.observe(el);
+      if (el && pageBoundaryMap[_k] != null) {
+        console.debug("[BookPage] Observing boundary element", {
+          boundaryIndex: _k,
+          startSentenceNo: pageBoundaryMap[_k],
+        });
+        observer.observe(el);
+      } else {
+        console.debug("[BookPage] Skipping boundary element", {
+          boundaryIndex: _k,
+          hasElement: !!el,
+          hasMappedSentence: pageBoundaryMap[_k] != null,
+          mappedSentence: pageBoundaryMap[_k],
+        });
+      }
     }
   }
   onDestroy(() => observer && observer.disconnect());
@@ -1162,16 +1686,14 @@
     // schedule on next tick to allow bindings to settle
     tick().then(() => updateCurrentSubtitleDebounced());
   }
-
-  // sentence rendering and pointer helpers moved to `src/lib/pages/bookPageUtils.ts`
 </script>
 
-<main class="bookpage fixed inset-0 overflow-hidden overscroll-none box-border">
+<main class="bookpage flex flex-col h-screen">
   <div
-    class="w-full max-w-[800px] mx-auto h-full py-8 px-4 box-border flex flex-col"
+    class="w-full max-w-[800px] mx-auto h-full min-h-0 py-8 px-4 box-border flex flex-col"
   >
     <header
-      class="topbar grid grid-cols-[auto_1fr_auto] items-center gap-2 mb-3"
+      class="topbar grid grid-cols-[auto_1fr_auto] items-center gap-2 mb-3 shrink-0"
     >
       <Button
         class="btn btn-ghost backBtn"
@@ -1193,16 +1715,65 @@
           </div>
         {/if}
       </div>
+      <Button
+        variant="outline"
+        aria-label="Mark difficult"
+        disabled={loading}
+        onclick={handleDifficult}>難易度を下げる</Button
+      >
     </header>
-    <p
-      class="interaction-help text-[0.7rem] text-gray-600 mt-3 text-center"
-      aria-label="Usage help"
-    >
-      クリックで単語表示、長押しで文章の意味を表示
-    </p>
+    <div class="interaction-help mt-4" aria-label="Usage help">
+      <div
+        class="mx-auto w-full bg-card/80 border border-[var(--border)] rounded-xl px-3 py-2 shadow-sm"
+      >
+        <div class="flex items-center justify-between">
+          <div
+            class="text-[11px] uppercase tracking-wide text-muted-foreground"
+          >
+            使い方
+          </div>
+          <button
+            type="button"
+            class="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+            aria-expanded={helpOpen}
+            aria-controls="usage-help-content"
+            on:click={toggleHelp}
+          >
+            {helpOpen ? "隠す" : "表示"}
+          </button>
+        </div>
+        {#if helpOpen}
+          <ul
+            id="usage-help-content"
+            class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-muted-foreground"
+            role="list"
+          >
+            <li class="flex items-center gap-2">
+              <span class="inline-block size-1.5 rounded-full bg-primary/60"
+              ></span>
+              <span>クリックで単語表示</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="inline-block size-1.5 rounded-full bg-primary/60"
+              ></span>
+              <span>ダブルクリックで選択解除</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="inline-block size-1.5 rounded-full bg-primary/60"
+              ></span>
+              {#if window.innerWidth > 640}
+                <span>長押し＋右クリックで文章の意味を表示</span>
+              {:else}
+                <span>長押しで文章の意味を表示</span>
+              {/if}
+            </li>
+          </ul>
+        {/if}
+      </div>
+    </div>
 
     {#if loading}
-      <section class="book-text mt-2">
+      <section class="book-text mt-2 flex-1 min-h-0">
         <ul class="sentences" aria-live="polite">
           {#each Array(6) as _, _i}
             <li class="sentence skeleton space-y-2">
@@ -1219,9 +1790,9 @@
     {:else if error}
       <p class="error">{error}</p>
     {:else}
-      <section class="book-text mt-2">
+      <section class="book-text mt-2 flex-1 min-h-0">
         <article
-          class="reader font-serif text-[1.25rem] leading-[1.7] text-[#1b1b1b] bg-white border border-slate-200 rounded-xl px-5 pt-5 pb-6 shadow-sm max-h-[75vh] overflow-scroll break-words"
+          class="reader font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-card/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm overflow-auto break-words h-full"
           aria-live="polite"
           bind:this={readerEl}
         >
@@ -1252,6 +1823,8 @@
                         touchPointerMove(ev.detail.idx, ev.detail.event)}
                       on:sentencePointerUp={(ev) =>
                         touchPointerUp(ev.detail.idx, ev.detail.event)}
+                      on:sentenceDblclick={(ev) =>
+                        handleDblclick(ev.detail.idx, ev.detail.event)}
                       on:sentenceKeydown={(ev) => {
                         const e = ev.detail.event as KeyboardEvent;
                         if (e.key === "Enter" || e.key === " ") {
@@ -1311,17 +1884,9 @@
       </section>
     {/if}
 
-    <div class="mt-4 text-center text-sm text-slate-600">
+    <div class="mt-4 text-center text-sm text-primary/200 shrink-0">
       Rate: {rateDisplay}
     </div>
-    <div class="actions flex items-center gap-2">
-      <Button
-        onclick={handleDifficult}
-        aria-label="Mark difficult"
-        disabled={loading}
-      >
-        難易度を下げる
-      </Button>
-    </div>
+    <div class="actions flex items-center gap-2 shrink-0"></div>
   </div>
 </main>

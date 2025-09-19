@@ -1,6 +1,6 @@
 import { render, fireEvent } from "@testing-library/svelte";
 import { describe, it } from "vitest";
-import MainPage from "$lib/pages/MainPage.svelte";
+import MainPage from "$lib/pages/main/MainPage.svelte";
 
 // Skipped: underlying component triggers network fetch not mocked; skipping for now per instruction to get green tests.
 describe.skip("MainPage", () => {

@@ -23,11 +23,8 @@ export interface GetTextPageParams {
   startSentenceNo?: number;
   userId?: string;
   charCount?: number;
-  // Optional telemetry params
-  wordClickCount?: number | null;
-  sentenceClickCount?: number | null;
+  difficultBtn?: boolean;
   time?: number | null;
-  difficultBtn?: boolean | null;
 }
 
 export interface GetTextPageResponse {
@@ -45,10 +42,8 @@ export async function getTextPage(
     startSentenceNo = 0,
     userId = "anonymous",
     charCount = 800,
-    wordClickCount,
-    sentenceClickCount,
-    time,
     difficultBtn,
+    time,
   } = params;
 
   // The backend expects these as query params. We forward them as-is.
@@ -57,9 +52,7 @@ export async function getTextPage(
     startSentenceNo,
     userId,
     charCount,
-    wordClickCount,
-    sentenceClickCount,
-    time,
     difficultBtn,
+    time,
   });
 }

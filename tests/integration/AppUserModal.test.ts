@@ -1,4 +1,4 @@
-import { render, fireEvent, waitFor } from "@testing-library/svelte";
+import { render, waitFor } from "@testing-library/svelte";
 // Type-only import for fetch signature
 import type { RequestInfo } from "node-fetch";
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -13,7 +13,7 @@ function resetStorage() {
   }
 }
 
-describe("App user modal integration", () => {
+describe("App user auto userId integration", () => {
   beforeEach(() => {
     resetStorage();
     // Mock fetch for books list to silence network errors
@@ -32,22 +32,17 @@ describe("App user modal integration", () => {
     });
   });
 
-  it("shows modal when no userId and hides after submit", async () => {
-    const { getByPlaceholderText, queryByText, getByRole } = render(App);
-
-    // Modal visible
-    const input = getByPlaceholderText("e.g. korewata") as HTMLInputElement;
-    expect(input).toBeTruthy();
-
-    await fireEvent.input(input, { target: { value: "reader" } });
-    const btn = getByRole("button", { name: "Save username" });
-    await fireEvent.click(btn);
-
+  it("does not show username modal and auto creates userId", async () => {
+    const { queryByText } = render(App);
+    // No modal text should be present
+    expect(queryByText("Choose a username")).toBeNull();
     await waitFor(() => {
-      // Modal removed
-      expect(queryByText("Choose a username")).toBeNull();
+      const id = localStorage.getItem("userId");
+      expect(id).toBeTruthy();
+      // Looks like a UUID v4 (basic shape)
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
     });
-
-    expect(localStorage.getItem("userId")).toMatch(/^reader-/);
   });
 });

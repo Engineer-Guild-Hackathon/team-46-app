@@ -6,7 +6,7 @@ declare global {
   }
 }
 import { render, waitFor } from "@testing-library/svelte";
-import BookPage from "$lib/pages/BookPage.svelte";
+import BookPage from "$lib/pages/book/BookPage.svelte";
 
 describe("BookPage initial telemetry counts", () => {
   it("omits counts (null) on first load", async () => {

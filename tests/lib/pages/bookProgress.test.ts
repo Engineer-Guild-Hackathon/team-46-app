@@ -6,7 +6,7 @@ import {
   setSentenceClicked,
   addClickedWordIndex,
   removeClickedWordIndex,
-} from "$lib/pages/bookProgress";
+} from "$lib/pages/book/bookProgress";
 
 const bookId = "test-book-progress";
 

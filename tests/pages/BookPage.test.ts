@@ -1,6 +1,6 @@
 import { render, fireEvent } from "@testing-library/svelte";
 import { describe, it, expect } from "vitest";
-import BookPage from "$lib/pages/BookPage.svelte";
+import BookPage from "$lib/pages/book/BookPage.svelte";
 
 describe("BookPage", () => {
   // Skipped: feature not implemented in UI yet (would show not-found state)
