@@ -18,6 +18,7 @@
   let chart: any;
   let container: HTMLDivElement | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let cleanupResize: (() => void) | null = null;
 
   onMount(async () => {
     const mod = await import("chart.js/auto");
@@ -37,7 +38,7 @@
     // Set up ResizeObserver to handle container resize
     if (container && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
-        if (chart) {
+        if (chart && canvas && canvas.isConnected) {
           chart.resize();
         }
       });
@@ -46,18 +47,21 @@
 
     // Fallback: listen to window resize
     const handleResize = () => {
-      if (chart) {
+      if (chart && canvas && canvas.isConnected) {
         chart.resize();
       }
     };
     window.addEventListener("resize", handleResize);
 
-    return () => {
+    cleanupResize = () => {
       window.removeEventListener("resize", handleResize);
     };
+
+    return cleanupResize;
   });
 
   onDestroy(() => {
+    cleanupResize?.();
     resizeObserver?.disconnect?.();
     chart?.destroy?.();
   });
