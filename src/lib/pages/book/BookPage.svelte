@@ -1598,16 +1598,7 @@
     if (!readerEl) return;
     observer = new IntersectionObserver(
       (entries) => {
-        console.debug("[BookPage] Intersection observer callback triggered", {
-          entriesCount: entries.length,
-          entries: entries.map((e) => ({
-            isIntersecting: e.isIntersecting,
-            boundingClientRect: e.boundingClientRect,
-            rootBounds: e.rootBounds,
-            intersectionRatio: e.intersectionRatio,
-            target: e.target.className || e.target.tagName,
-          })),
-        });
+        console.debug("[BookPage] Intersection observer callback triggered");
 
         for (const entry of entries) {
           console.debug("[BookPage] Processing intersection entry", {
@@ -2032,10 +2023,16 @@
   /* Prevent zoom on double-tap for mobile devices */
   .reader-content {
     touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* Additional fallback for older browsers */
   .reader-content * {
     touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
 </style>
