@@ -5,4 +5,4 @@
 - [x] Decreasing difficulty should clear all sentence and word selections in the swapped sentences
 - [ ] Supress default select logic when the user long presses on a phone
 - [x] user id is not automatically updated, should be set to a random UUID
-- [ ] update app name to FlexRead
+- [x] update app name to FlexRead
