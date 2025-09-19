@@ -52,6 +52,8 @@
   // Pagination / reader state
   let currentStart = 0;
   let lastEnd = 0;
+  let lastRequestedStart = 0; // Track the most recent page start requested
+  let lastForceReplacedStart = -1; // Track the last force-replaced page to avoid immediate reload
   let canNext = false;
   let readerEl: HTMLElement | null = null;
   let _wordsPerPage = 0;
@@ -150,6 +152,7 @@
     start = 0,
     charCountParam?: number,
     isDifficult?: boolean,
+    forceReplace?: boolean,
   ) {
     const isInitial = start === 0;
     if (isInitial) loading = true;
@@ -195,6 +198,21 @@
       };
       console.debug("[BookPage] getTextPage params ->", apiParams);
 
+      // Track this as the last requested start position
+      lastRequestedStart = start;
+
+      // Track force replaces to prevent immediate reload
+      if (forceReplace) {
+        lastForceReplacedStart = start;
+        // Immediately suppress auto-loading to prevent infinite scroll trigger
+        _suppressAutoLoad = true;
+        _lastScrollTriggerAt = Date.now();
+        console.debug("[BookPage] Suppressing auto-load due to force replace");
+      } else {
+        // Reset the force replace tracking when loading a different page normally
+        lastForceReplacedStart = -1;
+      }
+
       // Request real text page from backend
       // Include telemetry counts after the first successful load; omit on first
       const apiRes = await getTextPage({
@@ -228,15 +246,194 @@
         bookId,
         mapped,
       ) as Sentence[];
-      if (start === 0) {
+
+      if (start === 0 && !forceReplace) {
+        // Initial page load - reset everything
         sentences = newSentences;
         currentStart = start;
         pageCount = 1;
+        pageBoundaries = new Set();
+        // Clear the boundary maps
+        Object.keys(pageBoundaryMap).forEach(
+          (key) => delete pageBoundaryMap[key],
+        );
+        Object.keys(pageNumberForBoundary).forEach(
+          (key) => delete pageNumberForBoundary[key],
+        );
         // persist initial fetch as first page
         try {
           writePages(bookId, [[...sentences].map((s) => toStoredSentence(s))]);
         } catch {
           /* ignore */
+        }
+      } else if (forceReplace) {
+        if (start === 0) {
+          // Force replacing from sentence 0 - reset everything like initial load
+          sentences = newSentences;
+          currentStart = start;
+          pageCount = 1;
+          pageBoundaries = new Set();
+          // Clear the boundary maps
+          Object.keys(pageBoundaryMap).forEach(
+            (key) => delete pageBoundaryMap[key],
+          );
+          Object.keys(pageNumberForBoundary).forEach(
+            (key) => delete pageNumberForBoundary[key],
+          );
+
+          // Set up boundary for infinite scroll continuation
+          if (newSentences.length > 0) {
+            const lastSentence = newSentences[newSentences.length - 1];
+            const nextSentenceNo =
+              lastSentence.sentenceNo != null
+                ? lastSentence.sentenceNo + 1
+                : start + newSentences.length;
+
+            // Add boundary at the end of the replaced content
+            pageBoundaries.add(newSentences.length);
+            pageBoundaries = new Set(pageBoundaries);
+            pageBoundaryMap[newSentences.length] = nextSentenceNo;
+            pageNumberForBoundary[newSentences.length] = 2; // Next page will be page 2
+
+            console.debug(
+              "[BookPage] Set up boundary after first page force replace",
+              {
+                boundaryIndex: newSentences.length,
+                nextSentenceNo,
+                sentencesCount: newSentences.length,
+              },
+            );
+          }
+
+          // persist initial fetch as first page
+          try {
+            writePages(bookId, [
+              [...sentences].map((s) => toStoredSentence(s)),
+            ]);
+          } catch {
+            /* ignore */
+          }
+        } else {
+          // Targeted page replacement - replace only the sentences from this page
+          const startSentenceNo = start;
+          const endSentenceNo = res.endSentenceNo;
+
+          console.debug("[BookPage] Looking for sentence range to replace", {
+            startSentenceNo,
+            endSentenceNo,
+            existingSentenceNos: sentences.map((s) => s.sentenceNo),
+            newSentenceNos: newSentences.map((s) => s.sentenceNo),
+          });
+
+          // Find the range of sentence indices that correspond to this page
+          let startIndex = -1;
+          let endIndex = -1;
+
+          // Find where this page starts
+          for (let i = 0; i < sentences.length; i++) {
+            const sentenceNo = sentences[i].sentenceNo;
+            if (sentenceNo === startSentenceNo) {
+              startIndex = i;
+              break;
+            }
+          }
+
+          if (startIndex !== -1) {
+            // Find the end by looking for the next page boundary or end of array
+            // Look for the next sentence that doesn't belong to this page
+            const newSentenceNos = new Set(
+              newSentences.map((s) => s.sentenceNo),
+            );
+
+            for (let i = startIndex; i < sentences.length; i++) {
+              const sentenceNo = sentences[i].sentenceNo;
+              if (sentenceNo != null && !newSentenceNos.has(sentenceNo)) {
+                // This sentence doesn't belong to the new page, so end before it
+                endIndex = i - 1;
+                break;
+              }
+            }
+
+            // If we didn't find a boundary, replace to the end
+            if (endIndex === -1) {
+              endIndex = sentences.length - 1;
+            }
+          }
+
+          if (startIndex !== -1 && endIndex !== -1) {
+            // Replace the sentences in this range
+            sentences.splice(
+              startIndex,
+              endIndex - startIndex + 1,
+              ...newSentences,
+            );
+            sentences = [...sentences]; // Trigger reactivity
+
+            // Update boundary mapping: find the boundary that corresponds to this replaced range
+            // and update it to point to the next sentence after the replacement
+            const lastReplacedSentence = newSentences[newSentences.length - 1];
+            const nextSentenceNo =
+              lastReplacedSentence?.sentenceNo != null
+                ? lastReplacedSentence.sentenceNo + 1
+                : endSentenceNo + 1;
+
+            console.debug("[BookPage] Current pageBoundaryMap before update:", {
+              ...pageBoundaryMap,
+            });
+
+            // Find the boundary index that was pointing to this range
+            // Look for any boundary that points to a sentence in the replaced range
+            let boundaryUpdated = false;
+            for (const [boundaryIdx, sentenceNo] of Object.entries(
+              pageBoundaryMap,
+            )) {
+              if (
+                sentenceNo >= startSentenceNo &&
+                sentenceNo <= endSentenceNo
+              ) {
+                // Update this boundary to point to the next sentence after replacement
+                pageBoundaryMap[Number(boundaryIdx)] = nextSentenceNo;
+                console.debug("[BookPage] Updated boundary mapping", {
+                  boundaryIdx: Number(boundaryIdx),
+                  oldSentenceNo: sentenceNo,
+                  newSentenceNo: nextSentenceNo,
+                });
+                boundaryUpdated = true;
+              }
+            }
+
+            if (!boundaryUpdated) {
+              console.warn(
+                "[BookPage] No boundary found to update for replaced range",
+                {
+                  startSentenceNo,
+                  endSentenceNo,
+                  pageBoundaryMap: { ...pageBoundaryMap },
+                },
+              );
+            }
+
+            console.debug("[BookPage] 🔄 Replaced page sentences", {
+              startIndex,
+              endIndex,
+              startSentenceNo,
+              endSentenceNo,
+              replacedCount: endIndex - startIndex + 1,
+              newCount: newSentences.length,
+            });
+          } else {
+            console.warn(
+              "[BookPage] Could not find sentence range to replace, appending instead",
+            );
+            // Fallback to append if we can't find the range
+            const beforeLen = sentences.length;
+            pageBoundaries.add(beforeLen);
+            pageBoundaries = new Set(pageBoundaries);
+            pageBoundaryMap[beforeLen] = start;
+            pageCount = (pageCount || 1) + 1;
+            pageNumberForBoundary[beforeLen] = pageCount;
+            sentences = sentences.concat(newSentences);
+          }
         }
       } else {
         const beforeLen = sentences.length;
@@ -289,6 +486,62 @@
       // Important: render the reader content now so measurement can find it
       loading = false;
 
+      // Reinitialize infinite scroll observer after content changes
+      if (forceReplace) {
+        await tick(); // Wait for DOM to update
+
+        // Re-establish scroll event listeners after force replace
+        if (readerEl) {
+          // Remove existing listeners first to avoid duplicates
+          readerEl.removeEventListener("scroll", updateScrollProgressDebounced);
+          readerEl.removeEventListener("scroll", saveTopSentenceDebounced);
+          readerEl.removeEventListener(
+            "scroll",
+            updateCurrentSubtitleDebounced,
+          );
+          readerEl.removeEventListener("scroll", cancelAllTouchPresses);
+
+          // Re-add scroll listeners
+          readerEl.addEventListener("scroll", updateScrollProgressDebounced, {
+            passive: true,
+          });
+
+          readerEl.addEventListener("scroll", saveTopSentenceDebounced, {
+            passive: true,
+          });
+          readerEl.addEventListener("scroll", updateCurrentSubtitleDebounced, {
+            passive: true,
+          });
+          readerEl.addEventListener("scroll", cancelAllTouchPresses, {
+            passive: true,
+          });
+
+          console.debug(
+            "[BookPage] Re-established scroll event listeners after force replace",
+          );
+        }
+
+        // Temporarily suppress auto-loading to prevent immediate reload
+        _suppressAutoLoad = true;
+        console.debug(
+          "[BookPage] Extended auto-load suppression after force replace completion",
+        );
+        setTimeout(() => {
+          _suppressAutoLoad = false;
+          console.debug(
+            "[BookPage] Re-enabled auto-load after force replace cooldown",
+          );
+          // Clean up any stale boundary elements before reinitializing observer
+          for (const _k in boundaryEls) {
+            delete boundaryEls[_k];
+          }
+          console.debug(
+            "[BookPage] Cleaned up stale boundary elements before observer reinit",
+          );
+          // Reinitialize observer after suppression ends to avoid immediate triggers
+          initInfiniteObserver();
+        }, 3000); // Suppress for 3 seconds after force replace
+      }
       if (firstLoad) firstLoad = false;
     } catch (_e: unknown) {
       const e = _e as Error | undefined;
@@ -342,12 +595,17 @@
   // Infinite scroll helpers
   let loadingMore = false;
   async function loadMore() {
-    if (loadingMore || loading) return;
+    if (loadingMore || loading || _currentlyLoading) return;
     if (!canNext && sentences.length > 0) return;
     loadingMore = true;
+    _currentlyLoading = true;
     const nextStart = lastEnd + 1;
-    await loadPage(nextStart, getCharCountForViewport());
+    // Don't reload a page that was just force-replaced
+    if (nextStart !== lastForceReplacedStart) {
+      await loadPage(nextStart, getCharCountForViewport());
+    }
     loadingMore = false;
+    _currentlyLoading = false;
   }
 
   function toggleSentence(i: number) {
@@ -771,10 +1029,12 @@
     // mark that next getTextPage should include difficultBtn=true
     difficultBtnPending = true;
 
-    // Re-load current page with same start & charCount. The pending flag
-    // will cause the request to include `difficultBtn=true` so backend can
-    // return an updated `rate` value which we persist locally when received.
-    await loadPage(currentStart, getCharCountForViewport(), true);
+    console.debug("[BookPage] Reloading last requested page", {
+      lastRequestedStart,
+    });
+
+    // Reload the last requested page with difficulty adjustment
+    await loadPage(lastRequestedStart, getCharCountForViewport(), true, true);
   }
 
   // Position word tooltip to avoid clipping
@@ -836,6 +1096,44 @@
   function hideBubble(i: number) {
     bubbleVisible.delete(i);
     bubbleVisible = new Set(bubbleVisible);
+  }
+
+  // Debounced function to save top sentence position
+  function saveTopSentenceDebounced() {
+    if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
+    _scrollSaveTimer = window.setTimeout(() => {
+      try {
+        const idx = getTopVisibleSentenceIndex();
+        if (idx != null) {
+          const s = sentences[idx];
+          if (s && s.sentenceNo != null) {
+            // compute current offset of this sentence from top of reader
+            let offset = 0;
+            try {
+              const el = elRefs[idx];
+              if (el && readerEl) {
+                const containerRect = readerEl.getBoundingClientRect();
+                const elRect = el.getBoundingClientRect();
+                offset = Math.max(
+                  0,
+                  Math.round(elRect.top - containerRect.top),
+                );
+              }
+            } catch {
+              /* ignore offset calc */
+            }
+            const payload = { sentenceNo: s.sentenceNo, offset };
+            localStorage.setItem(
+              topSentenceStorageKey(bookId),
+              JSON.stringify(payload),
+            );
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      _scrollSaveTimer = null;
+    }, SCROLL_SAVE_DEBOUNCE) as unknown as number;
   }
 
   // Lifecycle: initial load and observers
@@ -1018,42 +1316,6 @@
         passive: true,
       });
       // persist top-visible sentence index and offset (debounced)
-      const saveTopSentenceDebounced = () => {
-        if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
-        _scrollSaveTimer = window.setTimeout(() => {
-          try {
-            const idx = getTopVisibleSentenceIndex();
-            if (idx != null) {
-              const s = sentences[idx];
-              if (s && s.sentenceNo != null) {
-                // compute current offset of this sentence from top of reader
-                let offset = 0;
-                try {
-                  const el = elRefs[idx];
-                  if (el && readerEl) {
-                    const containerRect = readerEl.getBoundingClientRect();
-                    const elRect = el.getBoundingClientRect();
-                    offset = Math.max(
-                      0,
-                      Math.round(elRect.top - containerRect.top),
-                    );
-                  }
-                } catch {
-                  /* ignore offset calc */
-                }
-                const payload = { sentenceNo: s.sentenceNo, offset };
-                localStorage.setItem(
-                  topSentenceStorageKey(bookId),
-                  JSON.stringify(payload),
-                );
-              }
-            }
-          } catch {
-            /* ignore */
-          }
-          _scrollSaveTimer = null;
-        }, SCROLL_SAVE_DEBOUNCE) as unknown as number;
-      };
       readerEl.addEventListener("scroll", saveTopSentenceDebounced, {
         passive: true,
       });
@@ -1122,9 +1384,10 @@
   const SCROLL_TRIGGER_COOLDOWN_MS = 2500;
   let _lastScrollTriggerAt = 0;
   let _suppressAutoLoad = false;
+  let _currentlyLoading = false;
 
   function checkAndLoadNearBottom() {
-    if (_suppressAutoLoad) return;
+    if (_suppressAutoLoad || _currentlyLoading) return;
     if (!readerEl) return;
     try {
       const el = readerEl;
@@ -1144,14 +1407,48 @@
       }
 
       const thresholdPx = LINES_FROM_BOTTOM * lineHeight + EXTRA_TRIGGER_PX;
+
+      console.debug("[BookPage] Scroll handler check", {
+        scrollTop,
+        clientHeight,
+        scrollHeight,
+        distanceFromBottom,
+        thresholdPx,
+        isNearBottom: distanceFromBottom <= thresholdPx,
+        lastEnd,
+        lastForceReplacedStart,
+      });
+
       if (distanceFromBottom <= thresholdPx) {
         const now = Date.now();
-        if (now - _lastScrollTriggerAt < SCROLL_TRIGGER_COOLDOWN_MS) return;
+        if (now - _lastScrollTriggerAt < SCROLL_TRIGGER_COOLDOWN_MS) {
+          console.debug("[BookPage] Scroll trigger on cooldown");
+          return;
+        }
         _lastScrollTriggerAt = now;
+        _currentlyLoading = true;
         if (lastEnd && lastEnd > 0) {
-          void loadPage(lastEnd + 1, getCharCountForViewport()).catch(() => {});
+          const nextStart = lastEnd + 1;
+          // Don't reload a page that was just force-replaced
+          if (nextStart !== lastForceReplacedStart) {
+            console.debug("[BookPage] Scroll handler triggering loadPage", {
+              nextStart,
+            });
+            void loadPage(nextStart, getCharCountForViewport()).finally(() => {
+              _currentlyLoading = false;
+            });
+          } else {
+            console.debug(
+              "[BookPage] Scroll handler skipped - matches force replaced start",
+              { nextStart, lastForceReplacedStart },
+            );
+            _currentlyLoading = false;
+          }
         } else {
-          void loadMore().catch(() => {});
+          console.debug("[BookPage] Scroll handler triggering loadMore");
+          void loadMore().finally(() => {
+            _currentlyLoading = false;
+          });
         }
       }
     } catch (_e) {
@@ -1175,25 +1472,81 @@
     if (!readerEl) return;
     observer = new IntersectionObserver(
       (entries) => {
+        console.debug("[BookPage] Intersection observer callback triggered", {
+          entriesCount: entries.length,
+          entries: entries.map((e) => ({
+            isIntersecting: e.isIntersecting,
+            boundingClientRect: e.boundingClientRect,
+            rootBounds: e.rootBounds,
+            intersectionRatio: e.intersectionRatio,
+            target: e.target.className || e.target.tagName,
+          })),
+        });
+
         for (const entry of entries) {
+          console.debug("[BookPage] Processing intersection entry", {
+            isIntersecting: entry.isIntersecting,
+            intersectionRatio: entry.intersectionRatio,
+            targetClass: entry.target.className,
+          });
+
           if (entry.isIntersecting) {
+            // Check if auto-loading is suppressed or already loading
+            if (_suppressAutoLoad || _currentlyLoading) {
+              console.debug(
+                "[BookPage] Infinite scroll observer triggered but auto-load is suppressed or already loading",
+                {
+                  suppressAutoLoad: _suppressAutoLoad,
+                  currentlyLoading: _currentlyLoading,
+                },
+              );
+              return;
+            }
+
             const el = entry.target as HTMLElement;
             // determine the boundary index by searching boundaryEls
             const idx = Number(
               Object.entries(boundaryEls).find(([_k, v]) => v === el)?.[0],
             );
+            console.debug("[BookPage] Boundary element intersecting", {
+              idx,
+              isFinite: Number.isFinite(idx),
+              boundaryEls: Object.keys(boundaryEls),
+            });
+
             if (!Number.isFinite(idx)) continue;
+
+            // Get the start sentence number before cleanup
+            const startSentenceNo = pageBoundaryMap[idx];
+
             // unobserve this boundary to avoid duplicate triggers
             observer?.unobserve(el);
             delete boundaryEls[idx];
-            // map to API start sentence
-            const startSentenceNo = pageBoundaryMap[idx];
+            // Clean up the boundary mapping to prevent reuse
+            delete pageBoundaryMap[idx];
+            delete pageNumberForBoundary[idx];
+            pageBoundaries.delete(idx);
+            pageBoundaries = new Set(pageBoundaries);
+
             if (startSentenceNo != null) {
+              console.debug("[BookPage] Loading next page from boundary", {
+                idx,
+                startSentenceNo,
+              });
+              _currentlyLoading = true;
               // request next chunk for this boundary
-              void loadPage(startSentenceNo, getCharCountForViewport());
+              void loadPage(startSentenceNo, getCharCountForViewport()).finally(
+                () => {
+                  _currentlyLoading = false;
+                },
+              );
             } else {
               // fallback to generic loadMore
-              void loadMore();
+              console.debug("[BookPage] Falling back to loadMore");
+              _currentlyLoading = true;
+              void loadMore().finally(() => {
+                _currentlyLoading = false;
+              });
             }
           }
         }
@@ -1206,12 +1559,31 @@
       },
     );
     // observe all existing boundaryEls
+    console.debug("[BookPage] Initializing infinite observer", {
+      boundaryEls: Object.keys(boundaryEls),
+      pageBoundaryMap: { ...pageBoundaryMap },
+      pageBoundaries: Array.from(pageBoundaries),
+    });
+
     for (const _k in boundaryEls) {
       const el = boundaryEls[_k];
       // Only observe boundaries that have a mapped start sentence (from API runs).
       // If we loaded pages from storage, pageBoundaryMap may not have an entry
       // for these boundaries — do not observe them to avoid accidental API calls.
-      if (el && pageBoundaryMap[_k] != null) observer.observe(el);
+      if (el && pageBoundaryMap[_k] != null) {
+        console.debug("[BookPage] Observing boundary element", {
+          boundaryIndex: _k,
+          startSentenceNo: pageBoundaryMap[_k],
+        });
+        observer.observe(el);
+      } else {
+        console.debug("[BookPage] Skipping boundary element", {
+          boundaryIndex: _k,
+          hasElement: !!el,
+          hasMappedSentence: pageBoundaryMap[_k] != null,
+          mappedSentence: pageBoundaryMap[_k],
+        });
+      }
     }
   }
   onDestroy(() => observer && observer.disconnect());
