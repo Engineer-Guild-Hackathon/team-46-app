@@ -45,13 +45,9 @@
     updateSessionWordsRead,
     updateSessionWordsLearned,
     completeSession,
-    type SessionStats,
   } from "./sessionStats";
 
   export let bookId: string;
-
-  // Session tracking state
-  let currentSession: SessionStats | null = null;
 
   // UI state
   let loading = true;
@@ -507,7 +503,7 @@
           if (words > 0) {
             persistWordsRead(words);
             // Update session tracking
-            currentSession = updateSessionWordsRead(words);
+            updateSessionWordsRead(words);
           }
         } catch {
           /* ignore stats errors */
@@ -850,7 +846,7 @@
         });
         // Track words learned in session if a new card was added
         if (wasAdded) {
-          currentSession = updateSessionWordsLearned(1);
+          updateSessionWordsLearned(1);
         }
       } catch {
         /* ignore card add */
@@ -1210,7 +1206,7 @@
       window.removeEventListener("resize", updateWindowWidth);
 
     // Initialize reading session
-    currentSession = getSession() || initSession();
+    getSession() || initSession();
 
     // Load persisted user rate if available
     try {
@@ -1752,9 +1748,9 @@
 
   // Handle going back and complete session
   function handleGoBack() {
-    // Complete the session regardless of the data (completeSession handles the logic)
+    // Complete the session (this saves it for MainPage to display)
     completeSession();
-    // Navigate back immediately
+    // Navigate back to main page
     window.history.back();
   }
 
