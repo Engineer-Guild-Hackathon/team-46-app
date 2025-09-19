@@ -58,7 +58,7 @@
   function backendSort(value: string): string | undefined {
     switch (value) {
       case "popularity":
-        return "pop";
+        return "popularity";
       case "year":
         return "year";
       case "recommended":
