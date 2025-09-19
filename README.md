@@ -14,5 +14,7 @@
 ---
 
 ## デモ　/ プレゼン資料
+
 - デモURL: flexread.vercel.app
+- Storybook(UI): https://develop--68c7c7fc9f082183d8520a74.chromatic.com/
 - プレゼンURL： https://docs.google.com/presentation/d/1Jum5oiyDba0ykXsura5-H4FYsWQdy0OEooG18veMOg0/edit?slide=id.g37dc3c80a83_0_28#slide=id.g37dc3c80a83_0_28
