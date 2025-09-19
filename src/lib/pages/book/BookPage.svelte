@@ -83,6 +83,7 @@
   // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null;
   let _difficultBtnPending = false;
+  let difficultLoading = false;
   const rateStorageKey = (id: string) => `bookRate:${id}`;
   // Per-book top-sentence number storage (stable across loads and resizes)
   const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
@@ -253,17 +254,52 @@
         }
       }
 
+      /**
+       * Clean word arrays by removing standalone punctuation entries
+       * This fixes phrase alignment issues caused by punctuation being treated as separate words
+       */
+      function cleanWordArrays(
+        enWords: string[],
+        jpWords: string[],
+      ): { en_word: string[]; jp_word: string[] } {
+        const cleanedEn: string[] = [];
+        const cleanedJp: string[] = [];
+
+        for (let i = 0; i < enWords.length; i++) {
+          const enWord = enWords[i];
+          const jpWord = jpWords[i];
+
+          // Skip standalone punctuation (single character that's not alphanumeric)
+          if (enWord && enWord.length === 1 && /^[^\w]$/.test(enWord)) {
+            continue;
+          }
+
+          cleanedEn.push(enWord);
+          if (jpWord) {
+            cleanedJp.push(jpWord);
+          }
+        }
+
+        return { en_word: cleanedEn, jp_word: cleanedJp };
+      }
+
       // Map to local Sentence shape and merge any saved progress
-      const mapped = res.text.map((t) => ({
-        type: t.type,
-        en: t.en,
-        jp: t.jp,
-        jp_word: t.jp_word,
-        en_word: (t as any).en_word ?? (t as any).en_phrase,
-        word_difficulty: (t as any).word_difficulty,
-        level: String(t.sentenceNo),
-        sentenceNo: t.sentenceNo,
-      }));
+      const mapped = res.text.map((t) => {
+        const rawEnWord = (t as any).en_word ?? (t as any).en_phrase ?? [];
+        const rawJpWord = t.jp_word ?? [];
+        const cleaned = cleanWordArrays(rawEnWord, rawJpWord);
+
+        return {
+          type: t.type,
+          en: t.en,
+          jp: t.jp,
+          jp_word: cleaned.jp_word,
+          en_word: cleaned.en_word,
+          word_difficulty: (t as any).word_difficulty,
+          level: String(t.sentenceNo),
+          sentenceNo: t.sentenceNo,
+        };
+      });
       const newSentences = mergeWithSavedSentences(
         bookId,
         mapped,
@@ -1074,23 +1110,44 @@
   }
   // Difficulty button: adjust user rate and reload
   async function handleDifficult() {
-    if (loading) return;
-    // Log difficult button press with previous rate (state before adjustment)
-    void logDifficultBtn(
-      (typeof localStorage !== "undefined" && localStorage.getItem("userId")) ||
-        "anonymous",
-      userRate,
-    ).catch(() => {});
+    if (loading || difficultLoading) return;
 
-    // mark that next getTextPage should include difficultBtn=true
-    _difficultBtnPending = true;
+    difficultLoading = true;
 
-    console.debug("[BookPage] Reloading last requested page", {
-      lastRequestedStart,
-    });
+    try {
+      // Log difficult button press with previous rate (state before adjustment)
+      void logDifficultBtn(
+        (typeof localStorage !== "undefined" &&
+          localStorage.getItem("userId")) ||
+          "anonymous",
+        userRate,
+      ).catch(() => {});
 
-    // Reload the last requested page with difficulty adjustment
-    await loadPage(lastRequestedStart, getCharCountForViewport(), true, true);
+      // Clear all selections before swapping sentences
+      selected = new Set<number>();
+      bubbleVisible = new Set<number>();
+      wordHighlights = {};
+      wordTooltipVisible = {};
+      wordTooltipWordIndex = {};
+
+      // Clear any active word tooltip timers
+      for (const timer of wordTooltipTimers.values()) {
+        window.clearTimeout(timer);
+      }
+      wordTooltipTimers.clear();
+
+      // mark that next getTextPage should include difficultBtn=true
+      _difficultBtnPending = true;
+
+      console.debug("[BookPage] Reloading last requested page", {
+        lastRequestedStart,
+      });
+
+      // Reload the last requested page with difficulty adjustment
+      await loadPage(lastRequestedStart, getCharCountForViewport(), true, true);
+    } finally {
+      difficultLoading = false;
+    }
   }
 
   // Position word tooltip to avoid clipping
@@ -1541,16 +1598,7 @@
     if (!readerEl) return;
     observer = new IntersectionObserver(
       (entries) => {
-        console.debug("[BookPage] Intersection observer callback triggered", {
-          entriesCount: entries.length,
-          entries: entries.map((e) => ({
-            isIntersecting: e.isIntersecting,
-            boundingClientRect: e.boundingClientRect,
-            rootBounds: e.rootBounds,
-            intersectionRatio: e.intersectionRatio,
-            target: e.target.className || e.target.tagName,
-          })),
-        });
+        console.debug("[BookPage] Intersection observer callback triggered");
 
         for (const entry of entries) {
           console.debug("[BookPage] Processing intersection entry", {
@@ -1795,9 +1843,11 @@
       <Button
         variant="outline"
         aria-label="難易度を下げる"
-        disabled={loading}
-        onclick={handleDifficult}>難易度を下げる</Button
+        disabled={loading || difficultLoading}
+        onclick={handleDifficult}
       >
+        {difficultLoading ? "難易度を変更中..." : "難易度を下げる"}
+      </Button>
     </header>
     <div class="interaction-help mt-4" aria-label="使い方ヘルプ">
       <div
@@ -1973,10 +2023,16 @@
   /* Prevent zoom on double-tap for mobile devices */
   .reader-content {
     touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* Additional fallback for older browsers */
   .reader-content * {
     touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
 </style>
