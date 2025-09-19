@@ -74,8 +74,10 @@
 {#if bubbleVisible}
   <span
     class="jp-translation block text-[0.9rem] text-[#2C1810]/75 mt-1 ml-1 leading-[1.2]"
-    aria-label="Japanese translation">{s.jp}</span
+    aria-label="Japanese translation"
   >
+    {s.jp && s.jp.trim() ? s.jp : "翻訳が見つかりません"}
+  </span>
 {/if}
 
 <style>

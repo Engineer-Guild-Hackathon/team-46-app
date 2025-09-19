@@ -61,6 +61,7 @@
   "dependencies": {
     "chart.js": "^4.5.0",
     "lost-pixel": "^3.22.0",
+    "uuid": "^13.0.0",
     "vercel": "^48.0.0"
   }
 }
