@@ -706,6 +706,8 @@
         _lastTapWord === idx &&
         now - _lastTapAt <= DOUBLE_TAP_MS;
       if (isDouble) {
+        // Prevent default zoom behavior on mobile double-tap
+        e.preventDefault();
         set.delete(idx);
         if (wordTooltipWordIndex[i] === idx) delete wordTooltipWordIndex[i];
         if (set.size === 0) delete wordHighlights[i];
@@ -982,7 +984,27 @@
 
   function touchPointerUp(i: number, e: PointerEvent) {
     const press = touchPresses[i];
-    if (!press) return;
+    if (!press) {
+      // No long press was detected, check if this might be a double-tap on a word
+      // to prevent zoom behavior
+      const idx = getWordIndexAtPointer(i, e);
+      if (idx != null) {
+        const set = wordHighlights[i];
+        if (set && set.has(idx)) {
+          // This is a tap on an already selected word, check for double-tap
+          const now = Date.now();
+          const isDouble =
+            _lastTapSentence === i &&
+            _lastTapWord === idx &&
+            now - _lastTapAt <= DOUBLE_TAP_MS;
+          if (isDouble) {
+            // Prevent zoom on double-tap
+            e.preventDefault();
+          }
+        }
+      }
+      return;
+    }
     window.clearTimeout(press.timer);
     const wasArmed = press.triggered;
     // remove the stored press entry immediately
@@ -1850,7 +1872,7 @@
     {:else}
       <section class="book-text mt-2 flex-1 min-h-0">
         <article
-          class="reader font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-card/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm overflow-auto break-words h-full"
+          class="reader reader-content font-reading text-[1.25rem] leading-[1.75] text-[var(--brand-ink)] bg-card/90 border border-[var(--border)] rounded-xl px-5 pt-5 pb-6 shadow-sm overflow-auto break-words h-full"
           aria-live="polite"
           bind:this={readerEl}
         >
@@ -1948,3 +1970,15 @@
     <div class="actions flex items-center gap-2 shrink-0"></div>
   </div>
 </main>
+
+<style>
+  /* Prevent zoom on double-tap for mobile devices */
+  .reader-content {
+    touch-action: manipulation;
+  }
+
+  /* Additional fallback for older browsers */
+  .reader-content * {
+    touch-action: manipulation;
+  }
+</style>
