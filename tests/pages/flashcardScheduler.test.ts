@@ -6,7 +6,9 @@ import {
   type CardItem,
 } from "../../src/lib/pages/flashcards/flashcardScheduler";
 
-const fixedNow = 1_700_000_000_000; // fixed timestamp for deterministic tests
+// Fixed timestamp for deterministic tests (represents a specific point in time)
+const FIXED_TIMESTAMP = 1_700_000_000_000;
+const fixedNow = FIXED_TIMESTAMP;
 
 function make(card: CardItem) {
   return initState(card, fixedNow);
