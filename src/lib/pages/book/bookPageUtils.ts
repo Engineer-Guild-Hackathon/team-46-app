@@ -118,7 +118,7 @@ export function renderSentenceHTML(
         const isHighlighted = !!highlightSet && highlightSet.has(pi);
         const baseCls = "word inline relative cursor-pointer whitespace-normal";
         const highlightCls =
-          "text-[#0a56ad] underline decoration-[#0a56ad] decoration-2 underline-offset-2";
+          "text-secondary-foreground underline decoration-secondary-foreground decoration-2 underline-offset-2";
 
         // Check if this phrase should be italic (check if any character in the phrase is italic)
         let isItalicPhrase = false;
