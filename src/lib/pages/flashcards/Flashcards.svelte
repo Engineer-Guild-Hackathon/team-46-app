@@ -213,8 +213,6 @@
           </div>
         {:else if s.total === 0}
           No cards.
-        {:else if s.total === 0}
-          No cards.
         {:else}
           All done for now. 🎉
         {/if}
