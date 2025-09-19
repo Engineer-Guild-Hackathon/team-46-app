@@ -1,9 +1,9 @@
-import type { Preview } from '@storybook/svelte'
-import '../src/app.css'
+import type { Preview } from "@storybook/svelte";
+import "../src/app.css";
 
 const preview: Preview = {
   parameters: {
-    actions: { argTypesRegex: '^on[A-Z].*' },
+    actions: { argTypesRegex: "^on[A-Z].*" },
     controls: {
       matchers: {
         color: /(background|color)$/i,
@@ -11,8 +11,8 @@ const preview: Preview = {
       },
     },
     backgrounds: { disable: true },
-    layout: 'fullscreen',
+    layout: "fullscreen",
   },
-}
+};
 
-export default preview
+export default preview;

@@ -9,5 +9,6 @@
       "$lib": ["./src/lib"],
       "$lib/*": ["./src/lib/*"]
     }
-  }
+  },
+  "include": ["src", "tests", "*.d.ts"]
 }
