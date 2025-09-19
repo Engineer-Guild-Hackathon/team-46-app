@@ -4,18 +4,53 @@
   import Browse from "../browse/Browse.svelte";
   import Stats from "../stats/Stats.svelte";
   import Flashcards from "../flashcards/Flashcards.svelte";
+  import SessionSummaryModal from "$lib/components/SessionSummaryModal.svelte";
+  import {
+    getCompletedSession,
+    clearCompletedSession,
+    type SessionStats,
+  } from "../book/sessionStats";
 
   // View selection state (moved here so it's available app-wide)
   let selectedView: "browse" | "stats" | "flashcards" = "browse";
+
+  // Session summary modal state
+  let showSessionModal = false;
+  let completedSession: SessionStats | null = null;
+
   function updateFromHash() {
     if (location.hash.startsWith("#/stats")) selectedView = "stats";
     else if (location.hash.startsWith("#/flashcards"))
       selectedView = "flashcards";
     else selectedView = "browse";
   }
+
+  function checkForCompletedSession() {
+    const session = getCompletedSession();
+    if (session && (session.wordsRead > 0 || session.wordsLearned > 0)) {
+      completedSession = session;
+      showSessionModal = true;
+    }
+  }
+
+  function handleSessionModalClose() {
+    showSessionModal = false;
+    clearCompletedSession();
+    completedSession = null;
+  }
+
+  function handleGoToFlashcards() {
+    showSessionModal = false;
+    clearCompletedSession();
+    completedSession = null;
+    window.location.hash = "#/flashcards";
+  }
+
   onMount(() => {
     updateFromHash();
     window.addEventListener("hashchange", updateFromHash);
+    // Check for completed session when component mounts
+    checkForCompletedSession();
   });
   onDestroy(() => window.removeEventListener("hashchange", updateFromHash));
 </script>
@@ -78,3 +113,11 @@
     </div>
   </nav>
 </footer>
+
+<!-- Session Summary Modal -->
+<SessionSummaryModal
+  isOpen={showSessionModal}
+  sessionData={completedSession}
+  onClose={handleSessionModalClose}
+  onGoToFlashcards={handleGoToFlashcards}
+/>

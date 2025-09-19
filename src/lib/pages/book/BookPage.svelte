@@ -39,8 +39,19 @@
     addCardIfMissing,
     removeDefinitionOrDelete,
   } from "../flashcards/flashcardsStore";
+  import {
+    initSession,
+    getSession,
+    updateSessionWordsRead,
+    updateSessionWordsLearned,
+    completeSession,
+    type SessionStats,
+  } from "./sessionStats";
 
   export let bookId: string;
+
+  // Session tracking state
+  let currentSession: SessionStats | null = null;
 
   // UI state
   let loading = true;
@@ -48,6 +59,10 @@
   let sentences: Sentence[] = [];
   let selected = new Set<number>();
   let bubbleVisible = new Set<number>();
+
+  // Reactive window width for responsive behavior
+  let windowWidth = 800; // Default fallback
+  let windowResizeCleanup: (() => void) | null = null;
 
   // Pagination / reader state
   let currentStart = 0;
@@ -145,6 +160,17 @@
     } catch {
       /* ignore */
     }
+  }
+
+  /**
+   * Clean a word for flashcard storage by removing underlines and
+   * everything after commas (including level markers)
+   */
+  function cleanWordForFlashcard(word: string): string {
+    return word
+      .replace(/_/g, "") // Remove all underlines
+      .split(",")[0] // Take only the part before the first comma
+      .trim(); // Remove any extra whitespace
   }
 
   /** Fetch a page of sentences. start===0 replaces content; otherwise append. */
@@ -478,7 +504,11 @@
             const matches = text.match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g);
             return acc + (matches ? matches.length : 0);
           }, 0);
-          if (words > 0) persistWordsRead(words);
+          if (words > 0) {
+            persistWordsRead(words);
+            // Update session tracking
+            currentSession = updateSessionWordsRead(words);
+          }
         } catch {
           /* ignore stats errors */
         }
@@ -704,12 +734,13 @@
           let m: RegExpExecArray | null;
           while ((m = re.exec(rawText)) !== null) words.push(m[0]);
           const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+          const cleanWord = cleanWordForFlashcard(wordValue);
           const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
           console.debug("[Flashcards] mobile unselect -> remove", {
-            wordId: wordValue,
+            wordId: cleanWord,
             def,
           });
-          if (def) removeDefinitionOrDelete(wordValue, def);
+          if (def) removeDefinitionOrDelete(cleanWord, def);
         } catch {
           /* ignore flashcard removal */
         }
@@ -808,11 +839,16 @@
       // Also add to flashcards storage (word front, sentence as back)
       try {
         const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
-        addCardIfMissing({
-          id: wordValue.toLowerCase(),
-          front: wordValue,
+        const cleanWord = cleanWordForFlashcard(wordValue);
+        const wasAdded = addCardIfMissing({
+          id: cleanWord.toLowerCase(),
+          front: cleanWord,
           back: def,
         });
+        // Track words learned in session if a new card was added
+        if (wasAdded) {
+          currentSession = updateSessionWordsLearned(1);
+        }
       } catch {
         /* ignore card add */
       }
@@ -854,12 +890,13 @@
       let m: RegExpExecArray | null;
       while ((m = re.exec(rawText)) !== null) words.push(m[0]);
       const wordValue = (words[idx] ?? String(idx)).toLowerCase();
+      const cleanWord = cleanWordForFlashcard(wordValue);
       const def = sentence?.jp_word?.[idx] || (sentence?.en ?? "");
       console.debug("[Flashcards] desktop unselect -> remove", {
-        wordId: wordValue,
+        wordId: cleanWord,
         def,
       });
-      if (def) removeDefinitionOrDelete(wordValue, def);
+      if (def) removeDefinitionOrDelete(cleanWord, def);
     } catch {
       /* ignore flashcard removal */
     }
@@ -1138,6 +1175,20 @@
 
   // Lifecycle: initial load and observers
   onMount(async () => {
+    // Initialize and track window width for responsive behavior
+    const updateWindowWidth = () => {
+      if (typeof window !== "undefined") {
+        windowWidth = window.innerWidth;
+      }
+    };
+    updateWindowWidth(); // Set initial value
+    window.addEventListener("resize", updateWindowWidth);
+    windowResizeCleanup = () =>
+      window.removeEventListener("resize", updateWindowWidth);
+
+    // Initialize reading session
+    currentSession = getSession() || initSession();
+
     // Load persisted user rate if available
     try {
       const stored = localStorage.getItem(rateStorageKey(bookId));
@@ -1349,9 +1400,8 @@
   onDestroy(() => {
     // ensure scroll-save timer cleared
     if (_scrollSaveTimer) window.clearTimeout(_scrollSaveTimer);
-  });
-
-  onDestroy(() => {
+    // cleanup window resize listener
+    windowResizeCleanup?.();
     if (readerEl)
       readerEl.removeEventListener("scroll", updateScrollProgressDebounced);
     if (readerEl)
@@ -1677,6 +1727,14 @@
     return blocks;
   }
 
+  // Handle going back and complete session
+  function handleGoBack() {
+    // Complete the session regardless of the data (completeSession handles the logic)
+    completeSession();
+    // Navigate back immediately
+    window.history.back();
+  }
+
   $: blocks = buildBlocks(sentences);
   // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
   $: rateDisplay = userRate !== null ? userRate : "—";
@@ -1700,7 +1758,7 @@
         type="button"
         variant="outline"
         aria-label="Go back"
-        onclick={() => window.history.back()}
+        onclick={handleGoBack}
       >
         <ChevronLeft class="w-5 h-5" />
       </Button>
@@ -1761,7 +1819,7 @@
             <li class="flex items-center gap-2">
               <span class="inline-block size-1.5 rounded-full bg-primary/60"
               ></span>
-              {#if window.innerWidth > 640}
+              {#if windowWidth > 640}
                 <span>長押し＋右クリックで文章の意味を表示</span>
               {:else}
                 <span>長押しで文章の意味を表示</span>
