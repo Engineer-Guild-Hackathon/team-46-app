@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
   import { onMount, onDestroy } from "svelte";
-  import Browse from "./Browse.svelte";
-  import Stats from "./Stats.svelte";
-  import Flashcards from "./Flashcards.svelte";
+  import Browse from "../browse/Browse.svelte";
+  import Stats from "../stats/Stats.svelte";
+  import Flashcards from "../flashcards/Flashcards.svelte";
 
   // View selection state (moved here so it's available app-wide)
   let selectedView: "browse" | "stats" | "flashcards" = "browse";

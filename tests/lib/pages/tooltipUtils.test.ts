@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   showWordTooltipState,
   hideWordTooltipState,
-} from "$lib/pages/tooltipUtils";
+} from "$lib/pages/shared/tooltipUtils";
 
 describe("tooltipUtils", () => {
   it("show/hide toggles visibility object", () => {

@@ -28,7 +28,7 @@
       <span
         aria-hidden="true"
         class="pointer-events-none -z-2 absolute inset-0 rounded-sm bg-secondary"
-      />
+      ></span>
     {/if}
     <span class="absolute right-2 flex size-3.5 items-center justify-center">
       {#if selected}

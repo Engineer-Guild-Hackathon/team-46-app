@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
-  import { renderSentenceHTML } from "$lib/pages/bookPageUtils";
+  import { renderSentenceHTML } from "../book/bookPageUtils";
 
   const dispatch = createEventDispatcher();
 

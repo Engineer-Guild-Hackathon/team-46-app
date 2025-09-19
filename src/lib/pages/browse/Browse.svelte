@@ -1,9 +1,9 @@
 <script lang="ts">
-  import BookCard from "../components/BookCard.svelte";
+  import BookCard from "$lib/components/BookCard.svelte";
   import * as Select from "$lib/components/ui/select";
   import { Input } from "$lib/components/ui/input";
   import { Search } from "@lucide/svelte";
-  import type { Book } from "../types";
+  import type { Book } from "$lib/types";
   import { fetchBooks } from "$lib/api/books";
 
   let search = $state("");

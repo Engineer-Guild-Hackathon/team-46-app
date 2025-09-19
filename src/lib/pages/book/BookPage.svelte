@@ -17,7 +17,7 @@
     sentenceNo?: number;
   };
   import { getTextPage } from "$lib/api/text";
-  import { selectWordAtPointer as selectWordAtPointerHelper } from "$lib/pages/bookPageUtils";
+  import { selectWordAtPointer as selectWordAtPointerHelper } from "./bookPageUtils";
   import {
     mergeWithSavedSentences,
     setSentenceClicked,
@@ -25,7 +25,7 @@
     removeClickedWordIndex,
     readPages,
     writePages,
-  } from "$lib/pages/bookProgress";
+  } from "./bookProgress";
   import { ChevronLeft } from "@lucide/svelte";
   import Button from "$lib/components/ui/button/button.svelte";
   import {
@@ -34,11 +34,11 @@
     logOpenWord,
   } from "$lib/api/logging";
   import SentenceInline from "$lib/pages/components/SentenceInline.svelte";
-  import { recordWordsRead as persistWordsRead } from "$lib/pages/readingStats";
+  import { recordWordsRead as persistWordsRead } from "../stats/readingStats";
   import {
     addCardIfMissing,
     removeDefinitionOrDelete,
-  } from "$lib/pages/flashcardsStore";
+  } from "../flashcards/flashcardsStore";
 
   export let bookId: string;
 

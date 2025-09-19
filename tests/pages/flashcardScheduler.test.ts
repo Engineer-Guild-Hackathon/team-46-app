@@ -4,7 +4,7 @@ import {
   initState,
   minutes,
   type CardItem,
-} from "../../src/lib/pages/flashcardScheduler";
+} from "../../src/lib/pages/flashcards/flashcardScheduler";
 
 const fixedNow = 1_700_000_000_000; // fixed timestamp for deterministic tests
 

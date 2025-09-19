@@ -3,7 +3,7 @@ import {
   esc,
   formatSentence,
   renderSentenceHTML,
-} from "$lib/pages/bookPageUtils";
+} from "$lib/pages/book/bookPageUtils";
 
 describe("bookPageUtils", () => {
   it("escapes html", () => {

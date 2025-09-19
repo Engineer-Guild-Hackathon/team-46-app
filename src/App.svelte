@@ -1,7 +1,7 @@
 <script lang="ts">
   import "./app.css";
-  import MainPage from "./lib/pages/MainPage.svelte";
-  import BookPage from "./lib/pages/BookPage.svelte";
+  import MainPage from "./lib/pages/main/MainPage.svelte";
+  import BookPage from "./lib/pages/book/BookPage.svelte";
   import { user } from "$lib/stores/user";
   // Ensure the user store is instantiated and side effects (userId generation) run,
   // and harden persistence for the integration test environment.
