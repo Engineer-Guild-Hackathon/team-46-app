@@ -71,7 +71,7 @@
 
   // User-adjustable reading rate (persisted per-book)
   let userRate: number | null = null;
-  let difficultBtnPending = false;
+  let _difficultBtnPending = false;
   const rateStorageKey = (id: string) => `bookRate:${id}`;
   // Per-book top-sentence number storage (stable across loads and resizes)
   const topSentenceStorageKey = (id: string) => `bookTopSentence:${id}`;
@@ -182,8 +182,8 @@
       // Build and log API params
       // Telemetry counters: null on first page load, then zero if no interactions.
       // Determine if this is the very first load by checking firstLoad flag and start===0.
-      const wordClickCountParam = firstLoad && start === 0 ? null : 0;
-      const sentenceClickCountParam = firstLoad && start === 0 ? null : 0;
+      const _wordClickCountParam = firstLoad && start === 0 ? null : 0;
+      const _sentenceClickCountParam = firstLoad && start === 0 ? null : 0;
 
       const apiParams = {
         bookId,
@@ -221,7 +221,7 @@
       res = apiRes;
       // consume the pending difficult flag after the request so subsequent
       // calls are normal unless the user presses the button again.
-      difficultBtnPending = false;
+      _difficultBtnPending = false;
       if (apiRes.rate !== null && !Number.isNaN(apiRes.rate)) {
         userRate = apiRes.rate;
         try {
@@ -1027,7 +1027,7 @@
     ).catch(() => {});
 
     // mark that next getTextPage should include difficultBtn=true
-    difficultBtnPending = true;
+    _difficultBtnPending = true;
 
     console.debug("[BookPage] Reloading last requested page", {
       lastRequestedStart,

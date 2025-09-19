@@ -8,7 +8,7 @@
   import { BarChart } from "$lib/components/ui/chart";
   import { user } from "$lib/stores/user";
   import { derived } from "svelte/store";
-  import { Flame, Star, Settings } from "@lucide/svelte";
+  import { Flame, Settings } from "@lucide/svelte";
   import GoalModal from "$lib/components/GoalModal.svelte";
   // Collapsible available if needed in future
 
@@ -90,21 +90,21 @@
   }
 
   // Lightweight weekly goal (can be made user-configurable later)
-  const WEEKLY_GOAL = 1000;
+  const _WEEKLY_GOAL = 1000;
   const progressPct = $derived(
     Math.max(0, Math.min(100, Math.round((totalThisWeek / weeklyGoal) * 100))),
   );
 
   // Simple GitHub-style intensity buckets for this week only
   // 0: none, 1: low, 2: mid, 3: high, 4: very high
-  const buckets = $derived(
+  const _buckets = $derived(
     weeklyData.map((v) =>
       v <= 0 ? 0 : v < 50 ? 1 : v < 150 ? 2 : v < 300 ? 3 : 4,
     ),
   );
 
   // Derive a simple 0..5 weekly rating from progress percentage
-  const weeklyRating = $derived(
+  const _weeklyRating = $derived(
     Math.max(0, Math.min(5, Math.round(progressPct / 20))),
   );
 </script>
