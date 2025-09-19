@@ -28,7 +28,6 @@
   import { removeCard } from "./flashcardsStore";
   import * as Table from "$lib/components/ui/table/index.js";
   import { onMount, onDestroy } from "svelte";
-  import Chart from "chart.js/auto";
   import { Trash2 } from "@lucide/svelte";
 
   let collapsibleOpen = $state(false);
@@ -42,7 +41,7 @@
   let s = $derived(deckStats(deck));
   let cats = $derived(categorize(deck));
   let pieEl: HTMLCanvasElement | null = null;
-  let pie: Chart | null = null;
+  let pie: any = null;
 
   function refresh() {
     queue = dueQueue(deck);
@@ -87,8 +86,10 @@
     "rgb(16,185,129)", // emerald-500
   ];
 
-  onMount(() => {
+  onMount(async () => {
     if (!pieEl) return;
+    const mod = await import("chart.js/auto");
+    const Chart = mod.default;
     pie = new Chart(pieEl, {
       type: "pie",
       data: {
