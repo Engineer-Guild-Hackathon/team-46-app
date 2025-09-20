@@ -53,6 +53,7 @@
       // Reload cards and rebuild deck
       const updatedCards = loadCards();
       deck = buildDeck(updatedCards, loadState());
+      deck = { ...deck };
       refresh();
     }
   }
@@ -68,16 +69,50 @@
     deck.cards = deck.cards.map((c) =>
       c.id === current!.id ? { ...c, ...next } : c,
     );
+    deck = { ...deck };
     saveState(deck);
     showBack = false;
     refresh();
+    // Force chart re-render after grading
+    if (pie && pieEl) {
+      pie.destroy();
+      import("chart.js/auto").then((mod) => {
+        const Chart = mod.default;
+        pie = new Chart(pieEl, {
+          type: "pie",
+          data: {
+            labels: ["未学習", "学習中", "習得中", "習得済み"],
+            datasets: [
+              {
+                data: [
+                  cats["not-learned"],
+                  cats.learning,
+                  cats.developed,
+                  cats.mastered,
+                ],
+                backgroundColor: colors,
+              },
+            ],
+          },
+          options: {
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: true },
+            },
+          },
+        });
+      });
+    }
   }
 
   refresh();
 
-  function pieData() {
-    return [cats["not-learned"], cats.learning, cats.developed, cats.mastered];
-  }
+  let pieData = $derived([
+    cats["not-learned"],
+    cats.learning,
+    cats.developed,
+    cats.mastered,
+  ]);
 
   const colors = [
     "rgb(156,163,175)", // gray-400
@@ -96,7 +131,7 @@
         labels: ["未学習", "学習中", "習得中", "習得済み"],
         datasets: [
           {
-            data: pieData(),
+            data: pieData,
             backgroundColor: colors,
           },
         ],
@@ -111,8 +146,8 @@
   });
 
   $effect(() => {
-    if (pie) {
-      pie.data.datasets[0].data = pieData();
+    if (pie && pieData) {
+      pie.data.datasets[0].data = pieData;
       pie.update();
     }
   });
@@ -218,28 +253,28 @@
         {/if}
       </Button>
 
-      <div class="mt-4 flex flex-wrap items-center gap-3 justify-center">
+      <div class="mt-4 flex flex-wrap items-center gap-2 justify-center">
         <Button
           variant="outline"
-          class="border"
+          class="border p-2"
           onclick={() => grade(1)}
           aria-label="もう一度 (1)">もう一度</Button
         >
         <Button
           variant="outline"
-          class="border"
+          class="border p-2"
           onclick={() => grade(3)}
           aria-label="難しい (3)">難しい</Button
         >
         <Button
           variant="outline"
-          class="border"
+          class="border p-2"
           onclick={() => grade(4)}
           aria-label="良い (4)">良い</Button
         >
         <Button
           variant="outline"
-          class="border"
+          class="border p-2"
           onclick={() => grade(5)}
           aria-label="簡単 (5)">簡単</Button
         >
