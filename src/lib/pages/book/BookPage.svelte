@@ -1803,8 +1803,6 @@
   }
 
   $: blocks = buildBlocks(sentences);
-  // $: paginatedSentences = paginateByWords(mockSentences, wordsPerPage)
-  $: rateDisplay = userRate !== null ? userRate : "—";
 
   $: if (readerEl && blocks) {
     // ensure header reflects current content after DOM updates
