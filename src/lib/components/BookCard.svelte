@@ -31,12 +31,14 @@
 
   <div class="flex pt-2 pr-0.5 pb-1.5 pl-0">
     <div class="flex flex-col gap-[2px] flex-1">
-      <h3 class="m-0 font-semibold text-[1.04rem] leading-[1.15]">
+      <h3
+        class="m-0 font-semibold text-[1.04rem] leading-[1.15] overflow-hidden text-ellipsis max-h-[2.3em]"
+      >
         {book.title}
       </h3>
       {#if book.author}
         <p
-          class="m-0 font-semibold text-secondary-foreground text-[0.9rem] truncate max-w-[90%] inline-block"
+          class="m-0 font-semibold text-secondary-foreground text-[0.9rem] overflow-hidden text-ellipsis max-w-[90%] inline-block"
         >
           {book.author}
         </p>
