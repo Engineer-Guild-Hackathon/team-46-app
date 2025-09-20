@@ -2011,11 +2011,6 @@
         </article>
       </section>
     {/if}
-
-    <div class="mt-4 text-center text-sm text-primary/200 shrink-0">
-      難易度: {rateDisplay}
-    </div>
-    <div class="actions flex items-center gap-2 shrink-0"></div>
   </div>
 </main>
 
